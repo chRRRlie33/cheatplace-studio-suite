@@ -262,8 +262,8 @@ const Auth = () => {
   };
 
   const handleVerifyCode = async () => {
-    if (!pendingAuth || verificationCode.length !== 6) {
-      toast.error("Veuillez entrer le code à 6 chiffres");
+    if (!pendingAuth || verificationCode.length !== 8) {
+      toast.error("Veuillez entrer le code à 8 chiffres");
       return;
     }
 
@@ -340,7 +340,7 @@ const Auth = () => {
               Vérification
             </h1>
             <p className="text-muted-foreground">
-              Un code à 6 chiffres a été envoyé à<br />
+              Un code à 8 chiffres a été envoyé à<br />
               <span className="text-foreground font-medium">{pendingAuth?.email}</span>
             </p>
           </div>
@@ -355,7 +355,7 @@ const Auth = () => {
             <CardContent className="space-y-6">
               <div className="flex justify-center">
                 <InputOTP
-                  maxLength={6}
+                  maxLength={8}
                   value={verificationCode}
                   onChange={(value) => setVerificationCode(value)}
                 >
@@ -366,6 +366,8 @@ const Auth = () => {
                     <InputOTPSlot index={3} />
                     <InputOTPSlot index={4} />
                     <InputOTPSlot index={5} />
+                    <InputOTPSlot index={6} />
+                    <InputOTPSlot index={7} />
                   </InputOTPGroup>
                 </InputOTP>
               </div>
@@ -373,7 +375,7 @@ const Auth = () => {
               <Button 
                 onClick={handleVerifyCode}
                 className="w-full bg-gradient-button shadow-glow-cyan"
-                disabled={verificationCode.length !== 6 || verifyingCode || loading}
+                disabled={verificationCode.length !== 8 || verifyingCode || loading}
               >
                 {verifyingCode || loading ? "Vérification..." : "Vérifier"}
               </Button>
