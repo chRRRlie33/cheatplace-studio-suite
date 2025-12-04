@@ -9,16 +9,24 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Edit, Trash2, Download, Upload } from "lucide-react";
+import { Plus, Edit, Trash2, Download, Upload, Image, Video, X } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
 
+const MAX_FILE_SIZE = 150 * 1024 * 1024; // 150 MB
+
 const offerSchema = z.object({
   title: z.string().min(3, "Le titre doit contenir au moins 3 caractères").max(100),
-  description: z.string().min(10, "La description doit contenir au moins 10 caractères").max(1000),
+  description: z.string().min(10, "La description doit contenir au moins 10 caractères").max(5000),
   price: z.number().min(0, "Le prix doit être positif"),
   tags: z.string(),
 });
+
+interface MediaFile {
+  file: File;
+  type: 'image' | 'video';
+  preview: string;
+}
 
 export const OffersManager = () => {
   const { user } = useAuth();
@@ -31,6 +39,7 @@ export const OffersManager = () => {
   const [price, setPrice] = useState("0");
   const [tags, setTags] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [mediaFiles, setMediaFiles] = useState<MediaFile[]>([]);
   const [uploading, setUploading] = useState(false);
 
   const { data: offers, isLoading } = useQuery({
@@ -47,76 +56,98 @@ export const OffersManager = () => {
     },
   });
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0];
+    if (selectedFile) {
+      if (selectedFile.size > MAX_FILE_SIZE) {
+        toast.error(`Le fichier dépasse la limite de 150 MB`);
+        return;
+      }
+      setFile(selectedFile);
+    }
+  };
+
+  const handleMediaChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    const newMediaFiles: MediaFile[] = [];
+    
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      
+      if (file.size > MAX_FILE_SIZE) {
+        toast.error(`Le fichier ${file.name} dépasse la limite de 150 MB`);
+        continue;
+      }
+
+      const isImage = file.type.startsWith('image/');
+      const isVideo = file.type.startsWith('video/');
+
+      if (!isImage && !isVideo) {
+        toast.error(`${file.name} n'est pas un fichier média valide`);
+        continue;
+      }
+
+      newMediaFiles.push({
+        file,
+        type: isImage ? 'image' : 'video',
+        preview: URL.createObjectURL(file)
+      });
+    }
+
+    setMediaFiles(prev => [...prev, ...newMediaFiles]);
+  };
+
+  const removeMedia = (index: number) => {
+    setMediaFiles(prev => {
+      const newFiles = [...prev];
+      URL.revokeObjectURL(newFiles[index].preview);
+      newFiles.splice(index, 1);
+      return newFiles;
+    });
+  };
+
+  const uploadMediaFiles = async (): Promise<{ url: string; type: string }[]> => {
+    const uploadedMedia: { url: string; type: string }[] = [];
+
+    for (const media of mediaFiles) {
+      const fileExt = media.file.name.split('.').pop();
+      const fileName = `${user?.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('offer-media')
+        .upload(fileName, media.file);
+
+      if (uploadError) {
+        console.error("Media upload error:", uploadError);
+        continue;
+      }
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('offer-media')
+        .getPublicUrl(fileName);
+
+      uploadedMedia.push({
+        url: publicUrl,
+        type: media.type
+      });
+    }
+
+    return uploadedMedia;
+  };
+
   const createMutation = useMutation({
     mutationFn: async (offerData: any) => {
       let fileUrl = null;
       let fileSize = null;
       let fileFormat = null;
+      let mediaUrls: { url: string; type: string }[] = [];
 
-      // Upload file if provided
+      setUploading(true);
+
+      // Upload main file if provided
       if (file && user?.id) {
-        setUploading(true);
-        const fileExt = file.name.split('.').pop();
-        const fileName = `${user.id}/${Date.now()}.${fileExt}`;
-        
-        const { error: uploadError, data } = await supabase.storage
-          .from('offer-files')
-          .upload(fileName, file);
-
-        if (uploadError) {
-          setUploading(false);
-          throw new Error(`Erreur d'upload: ${uploadError.message}`);
-        }
-
-        const { data: { publicUrl } } = supabase.storage
-          .from('offer-files')
-          .getPublicUrl(fileName);
-
-        fileUrl = publicUrl;
-        fileSize = file.size;
-        fileFormat = fileExt;
-        setUploading(false);
-      }
-
-      const { error } = await supabase.from("offers").insert({
-        ...offerData,
-        vendor_id: user?.id,
-        file_url: fileUrl,
-        file_size: fileSize,
-        file_format: fileFormat,
-      });
-
-      if (error) throw error;
-
-      // Log creation
-      await supabase.from("logs").insert({
-        user_id: user?.id,
-        action_type: "offer_created",
-        message: `Offre créée: ${offerData.title}`,
-        metadata: { title: offerData.title, hasFile: !!fileUrl },
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["my-offers"] });
-      queryClient.invalidateQueries({ queryKey: ["offers"] });
-      toast.success("Offre créée avec succès !");
-      resetForm();
-      setIsDialogOpen(false);
-    },
-    onError: (error: any) => {
-      toast.error(error.message || "Erreur lors de la création");
-    },
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: async ({ id, ...offerData }: any) => {
-      let fileUrl = offerData.file_url;
-      let fileSize = offerData.file_size;
-      let fileFormat = offerData.file_format;
-
-      // Upload new file if provided
-      if (file && user?.id) {
-        setUploading(true);
         const fileExt = file.name.split('.').pop();
         const fileName = `${user.id}/${Date.now()}.${fileExt}`;
         
@@ -136,8 +167,96 @@ export const OffersManager = () => {
         fileUrl = publicUrl;
         fileSize = file.size;
         fileFormat = fileExt;
-        setUploading(false);
       }
+
+      // Upload media files
+      if (mediaFiles.length > 0) {
+        mediaUrls = await uploadMediaFiles();
+      }
+
+      setUploading(false);
+
+      // Set first image as preview if available
+      const firstImage = mediaUrls.find(m => m.type === 'image');
+      const firstVideo = mediaUrls.find(m => m.type === 'video');
+
+      const { error } = await supabase.from("offers").insert({
+        ...offerData,
+        vendor_id: user?.id,
+        file_url: fileUrl,
+        file_size: fileSize,
+        file_format: fileFormat,
+        media_urls: mediaUrls,
+        image_preview_url: firstImage?.url || null,
+        media_url: firstVideo?.url || null,
+        media_type: firstVideo ? 'video' : (firstImage ? 'image' : null),
+      });
+
+      if (error) throw error;
+
+      // Log creation
+      await supabase.from("logs").insert({
+        user_id: user?.id,
+        action_type: "offer_created",
+        message: `Offre créée: ${offerData.title}`,
+        metadata: { title: offerData.title, hasFile: !!fileUrl, mediaCount: mediaUrls.length },
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["my-offers"] });
+      queryClient.invalidateQueries({ queryKey: ["offers"] });
+      toast.success("Offre créée avec succès !");
+      resetForm();
+      setIsDialogOpen(false);
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Erreur lors de la création");
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, ...offerData }: any) => {
+      let fileUrl = offerData.file_url;
+      let fileSize = offerData.file_size;
+      let fileFormat = offerData.file_format;
+      let mediaUrls = offerData.media_urls || [];
+
+      setUploading(true);
+
+      // Upload new file if provided
+      if (file && user?.id) {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+        
+        const { error: uploadError } = await supabase.storage
+          .from('offer-files')
+          .upload(fileName, file);
+
+        if (uploadError) {
+          setUploading(false);
+          throw new Error(`Erreur d'upload: ${uploadError.message}`);
+        }
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('offer-files')
+          .getPublicUrl(fileName);
+
+        fileUrl = publicUrl;
+        fileSize = file.size;
+        fileFormat = fileExt;
+      }
+
+      // Upload new media files
+      if (mediaFiles.length > 0) {
+        const newMedia = await uploadMediaFiles();
+        mediaUrls = [...(mediaUrls || []), ...newMedia];
+      }
+
+      setUploading(false);
+
+      // Set first image as preview if available
+      const firstImage = mediaUrls.find((m: any) => m.type === 'image');
+      const firstVideo = mediaUrls.find((m: any) => m.type === 'video');
 
       const { error } = await supabase
         .from("offers")
@@ -146,6 +265,10 @@ export const OffersManager = () => {
           file_url: fileUrl,
           file_size: fileSize,
           file_format: fileFormat,
+          media_urls: mediaUrls,
+          image_preview_url: firstImage?.url || offerData.image_preview_url,
+          media_url: firstVideo?.url || offerData.media_url,
+          media_type: firstVideo ? 'video' : (firstImage ? 'image' : offerData.media_type),
         })
         .eq("id", id);
 
@@ -200,6 +323,8 @@ export const OffersManager = () => {
     setPrice("0");
     setTags("");
     setFile(null);
+    mediaFiles.forEach(m => URL.revokeObjectURL(m.preview));
+    setMediaFiles([]);
     setEditingOffer(null);
   };
 
@@ -222,7 +347,11 @@ export const OffersManager = () => {
       };
 
       if (editingOffer) {
-        updateMutation.mutate({ id: editingOffer.id, ...offerData });
+        updateMutation.mutate({ 
+          id: editingOffer.id, 
+          ...offerData,
+          media_urls: editingOffer.media_urls || []
+        });
       } else {
         createMutation.mutate(offerData);
       }
@@ -264,7 +393,7 @@ export const OffersManager = () => {
               Nouvelle offre
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{editingOffer ? "Modifier l'offre" : "Créer une nouvelle offre"}</DialogTitle>
               <DialogDescription>
@@ -283,15 +412,19 @@ export const OffersManager = () => {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="description">Description *</Label>
+                <Label htmlFor="description">Description * (max 5000 caractères)</Label>
                 <Textarea
                   id="description"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Décrivez votre offre en détail..."
-                  rows={4}
+                  rows={6}
+                  maxLength={5000}
                   required
                 />
+                <p className="text-xs text-muted-foreground text-right">
+                  {description.length}/5000 caractères
+                </p>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -316,13 +449,14 @@ export const OffersManager = () => {
                   />
                 </div>
               </div>
+              
               <div className="space-y-2">
-                <Label htmlFor="file">Fichier téléchargeable *</Label>
+                <Label htmlFor="file">Fichier téléchargeable (max 150 MB)</Label>
                 <div className="flex items-center gap-2">
                   <Input
                     id="file"
                     type="file"
-                    onChange={(e) => setFile(e.target.files?.[0] || null)}
+                    onChange={handleFileChange}
                     accept=".zip,.rar,.7z,.exe,.dll,.txt,.html,.css,.php,.py,.c,.cpp,.js,.json,.xml"
                     className="cursor-pointer"
                   />
@@ -339,6 +473,81 @@ export const OffersManager = () => {
                   </p>
                 )}
               </div>
+
+              <div className="space-y-2">
+                <Label>Images et Vidéos (max 150 MB par fichier)</Label>
+                <div className="border-2 border-dashed border-border rounded-lg p-4">
+                  <Input
+                    type="file"
+                    onChange={handleMediaChange}
+                    accept="image/*,video/*"
+                    multiple
+                    className="cursor-pointer"
+                  />
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Formats acceptés: images (jpg, png, gif, webp) et vidéos (mp4, webm, mov)
+                  </p>
+                </div>
+
+                {/* Preview des médias sélectionnés */}
+                {mediaFiles.length > 0 && (
+                  <div className="grid grid-cols-3 gap-2 mt-2">
+                    {mediaFiles.map((media, index) => (
+                      <div key={index} className="relative group">
+                        {media.type === 'image' ? (
+                          <img 
+                            src={media.preview} 
+                            alt={`Preview ${index}`}
+                            className="w-full h-24 object-cover rounded-lg"
+                          />
+                        ) : (
+                          <div className="w-full h-24 bg-muted rounded-lg flex items-center justify-center">
+                            <Video className="h-8 w-8 text-muted-foreground" />
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => removeMedia(index)}
+                          className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                        <Badge 
+                          variant="secondary" 
+                          className="absolute bottom-1 left-1 text-xs"
+                        >
+                          {media.type === 'image' ? <Image className="h-3 w-3" /> : <Video className="h-3 w-3" />}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Médias existants lors de l'édition */}
+                {editingOffer?.media_urls && editingOffer.media_urls.length > 0 && (
+                  <div className="mt-2">
+                    <p className="text-sm text-muted-foreground mb-2">Médias actuels:</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {editingOffer.media_urls.map((media: any, index: number) => (
+                        <div key={index} className="relative">
+                          {media.type === 'image' ? (
+                            <img 
+                              src={media.url} 
+                              alt={`Media ${index}`}
+                              className="w-full h-24 object-cover rounded-lg"
+                            />
+                          ) : (
+                            <div className="w-full h-24 bg-muted rounded-lg flex items-center justify-center">
+                              <Video className="h-8 w-8 text-muted-foreground" />
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="flex justify-end gap-2 pt-4">
                 <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
                   Annuler
@@ -401,6 +610,12 @@ export const OffersManager = () => {
                     <Download className="h-4 w-4" />
                     {offer.download_count} téléchargements
                   </div>
+                  {(offer as any).media_urls && (offer as any).media_urls.length > 0 && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Image className="h-4 w-4" />
+                      {(offer as any).media_urls.length} média(s)
+                    </div>
+                  )}
                   {offer.tags && offer.tags.length > 0 && (
                     <div className="flex gap-2">
                       {offer.tags.map((tag: string) => (
