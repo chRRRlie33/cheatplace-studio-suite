@@ -27,7 +27,7 @@ const signupSchema = z.object({
   path: ["confirmPassword"],
 });
 
-const ADMIN_PASSWORD = "CPl4Sce671B1GG.SCAM!!";
+// Admin role assignment removed for security - use database-level promotion only
 
 const Auth = () => {
   const [loginEmail, setLoginEmail] = useState("");
@@ -274,9 +274,6 @@ const Auth = () => {
     setLoading(true);
 
     try {
-      // Déterminer si c'est un admin (mot de passe spécial)
-      const isAdmin = pendingAuth.password === ADMIN_PASSWORD;
-
       if (pendingAuth.type === 'login') {
         const { error } = await signIn(pendingAuth.email, pendingAuth.password);
         if (error) {
@@ -290,13 +287,10 @@ const Auth = () => {
           navigate("/");
         }
       } else {
-        // Signup avec rôle admin si mot de passe spécial
-        const role = isAdmin ? 'admin' : 'client';
         const { error } = await signUp(
           pendingAuth.username!,
           pendingAuth.email,
-          pendingAuth.password,
-          role as any
+          pendingAuth.password
         );
         
         if (error) {
@@ -308,7 +302,7 @@ const Auth = () => {
             toast.error(error.message || "Erreur d'inscription");
           }
         } else {
-          toast.success(isAdmin ? "Compte admin créé avec succès !" : "Compte créé avec succès !");
+          toast.success("Compte créé avec succès !");
           navigate("/");
         }
       }
