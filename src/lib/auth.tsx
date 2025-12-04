@@ -5,8 +5,6 @@ import { useNavigate } from "react-router-dom";
 
 type AppRole = "client" | "vendor" | "admin";
 
-const ADMIN_PASSWORD = "CPl4Sce671B1GG.SCAM!!";
-
 interface AuthContextType {
   user: User | null;
   session: Session | null;
@@ -196,13 +194,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           return { error: { message: "Ce compte a été banni. Accès refusé." } };
         }
 
-        // Si le mot de passe est le mot de passe admin, mettre à jour le rôle
-        if (password === ADMIN_PASSWORD) {
-          await supabase
-            .from("user_roles")
-            .upsert({ user_id: data.user.id, role: 'admin' }, { onConflict: 'user_id,role' });
-        }
-
         // Update last login, increment login count, and store IP
         const { data: profileData } = await supabase
           .from("profiles")
@@ -238,9 +229,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       const redirectUrl = `${window.location.origin}/`;
       
-      // Déterminer le rôle final (admin si mot de passe spécial)
-      const finalRole = password === ADMIN_PASSWORD ? 'admin' : role;
-      
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -248,7 +236,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           emailRedirectTo: redirectUrl,
           data: {
             username,
-            role: finalRole,
+            role: role,
           },
         },
       });

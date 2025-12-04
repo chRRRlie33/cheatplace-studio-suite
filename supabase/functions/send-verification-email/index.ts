@@ -1,4 +1,4 @@
-// send-verification-email/index.ts (version robuste)
+// send-verification-email/index.ts (with rate limiting)
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
@@ -15,7 +15,32 @@ interface VerificationRequest {
 }
 
 function generateCode(): string {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  // Generate 8-digit code for better security
+  return Math.floor(10000000 + Math.random() * 90000000).toString();
+}
+
+// Rate limiting: max 5 requests per email per 15 minutes
+async function checkRateLimit(supabase: any, email: string): Promise<{ allowed: boolean; remaining: number }> {
+  const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+  
+  const { data, error } = await supabase
+    .from("verification_codes")
+    .select("id")
+    .eq("email", email)
+    .gte("created_at", fifteenMinutesAgo);
+
+  if (error) {
+    console.error("Rate limit check error:", error);
+    return { allowed: true, remaining: 5 }; // Allow on error to not block legitimate users
+  }
+
+  const count = data?.length || 0;
+  const maxRequests = 5;
+  
+  return {
+    allowed: count < maxRequests,
+    remaining: Math.max(0, maxRequests - count)
+  };
 }
 
 const handler = async (req: Request): Promise<Response> => {
@@ -28,6 +53,12 @@ const handler = async (req: Request): Promise<Response> => {
     const { email, type, user_id } = body as VerificationRequest;
     if (!email || !type) return new Response(JSON.stringify({ error: "Email and type are required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return new Response(JSON.stringify({ error: "Invalid email format" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     // Envs
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -35,27 +66,43 @@ const handler = async (req: Request): Promise<Response> => {
 
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
       console.error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
-      return new Response(JSON.stringify({ error: "Server configuration error (supabase)" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: "Server configuration error" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     if (!RESEND_API_KEY) {
       console.error("Missing RESEND_API_KEY");
-      return new Response(JSON.stringify({ error: "Server configuration error (resend)" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: "Server configuration error" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+    // Check rate limit
+    const rateLimit = await checkRateLimit(supabase, email);
+    if (!rateLimit.allowed) {
+      console.log(`Rate limit exceeded for email: ${email}`);
+      return new Response(JSON.stringify({ 
+        error: "Trop de tentatives. Veuillez réessayer dans 15 minutes.",
+        retryAfter: 900 // 15 minutes in seconds
+      }), { 
+        status: 429, 
+        headers: { 
+          ...corsHeaders, 
+          "Content-Type": "application/json",
+          "Retry-After": "900"
+        } 
+      });
+    }
+
     const code = generateCode();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutes
 
-    // Supprimer anciens codes non vérifiés (try/catch pour ne pas planter)
+    // Delete old unverified codes for this email (cleanup)
     try {
-      const { error: delErr } = await supabase.from("verification_codes").delete().eq("email", email).eq("verified", false);
-      if (delErr) console.warn("Warning delete old codes:", delErr);
+      await supabase.from("verification_codes").delete().eq("email", email).eq("verified", false);
     } catch (e) {
-      console.warn("Warning exception during delete old codes:", String(e));
+      console.warn("Warning: could not delete old codes:", String(e));
     }
 
-    // Insérer nouveau code (avec select pour aider au debug)
+    // Insert new code using service role (bypasses RLS)
     let insertedRow: any = null;
     try {
       const { data, error } = await supabase
@@ -64,15 +111,15 @@ const handler = async (req: Request): Promise<Response> => {
         .select();
       if (error) {
         console.error("Insert verification code error:", error);
-        return new Response(JSON.stringify({ error: "Failed to create verification code", details: error }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ error: "Failed to create verification code" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
       insertedRow = data?.[0] ?? null;
     } catch (err) {
       console.error("Exception inserting code:", err);
-      return new Response(JSON.stringify({ error: "Failed to create verification code (exception)", details: String(err) }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: "Failed to create verification code" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Construire l'HTML (utilise un template literal correctement)
+    // Build HTML email
     const emailHtml = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: linear-gradient(135deg, #07174a 0%, #0f2b5b 100%); color: #ffffff;">
         <div style="text-align: center; margin-bottom: 20px;">
@@ -86,7 +133,7 @@ const handler = async (req: Request): Promise<Response> => {
           </p>
 
           <div style="display:inline-block; background: rgba(0,0,0,0.35); border-radius: 8px; padding: 16px 26px; margin: 18px 0;">
-            <span style="font-size:36px; font-weight:700; letter-spacing:6px; color:#7dd3fc;">${code}</span>
+            <span style="font-size:32px; font-weight:700; letter-spacing:4px; color:#7dd3fc;">${code}</span>
           </div>
 
           <p style="color: #9fb8d9; font-size: 13px; margin-top: 12px;">Ce code expire dans 10 minutes.</p>
@@ -98,8 +145,7 @@ const handler = async (req: Request): Promise<Response> => {
       </div>
     `;
 
-    // Envoyer l'email via Resend
-    let emailResponseRaw: any = null;
+    // Send email via Resend
     try {
       const resp = await fetch("https://api.resend.com/emails", {
         method: "POST",
@@ -115,36 +161,27 @@ const handler = async (req: Request): Promise<Response> => {
         }),
       });
 
-      // lire le body (json ou text)
-      const contentType = resp.headers.get("content-type") || "";
-      if (contentType.includes("application/json")) {
-        emailResponseRaw = await resp.json();
-      } else {
-        emailResponseRaw = { text: await resp.text(), status: resp.status };
-      }
-
-      console.log("Resend send status:", resp.status, "body:", emailResponseRaw);
-
       if (!resp.ok) {
-        // supprimer le code inséré si l'envoi échoue (pour éviter codes flottants)
+        const errorBody = await resp.text();
+        console.error("Resend error:", resp.status, errorBody);
+        // Clean up the code if email failed
         try { await supabase.from("verification_codes").delete().eq("id", insertedRow?.id); } catch(e){/*ignore*/}
-
-        return new Response(JSON.stringify({ error: "Failed to send email", details: emailResponseRaw }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ error: "Failed to send email" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
+
+      console.log("Verification email sent successfully to:", email);
     } catch (err) {
       console.error("Fetch to Resend failed:", String(err));
-      // supprimer le code inséré
       try { await supabase.from("verification_codes").delete().eq("id", insertedRow?.id); } catch(e){/*ignore*/}
-
-      return new Response(JSON.stringify({ error: "Failed to contact email provider", details: String(err) }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: "Failed to contact email provider" }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Succès
-    return new Response(JSON.stringify({ success: true, message: "Verification code sent", inserted: insertedRow, emailResult: emailResponseRaw }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    // Success - don't expose internal details
+    return new Response(JSON.stringify({ success: true, message: "Verification code sent" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
   } catch (error: any) {
     console.error("Unhandled error in send-verification-email:", error);
-    return new Response(JSON.stringify({ error: error?.message || String(error) }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 };
 
