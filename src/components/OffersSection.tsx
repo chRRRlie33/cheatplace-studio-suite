@@ -4,13 +4,19 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Download, Eye, Package, X, Play, Image as ImageIcon } from "lucide-react";
+import { Download, Eye, Package, Play, Image as ImageIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+
+interface MediaItem {
+  url: string;
+  type: 'image' | 'video';
+}
 
 export const OffersSection = () => {
   const [selectedOffer, setSelectedOffer] = useState<any>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [currentMediaIndex, setCurrentMediaIndex] = useState(0);
   const queryClient = useQueryClient();
 
   const handleDownload = async (offer: any) => {
@@ -98,6 +104,44 @@ export const OffersSection = () => {
     if (bytes === 0) return "0 Byte";
     const i = Math.floor(Math.log(bytes) / Math.log(1024));
     return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + " " + sizes[i];
+  };
+
+  const getMediaItems = (offer: any): MediaItem[] => {
+    const items: MediaItem[] = [];
+    
+    // Ajouter les médias du champ media_urls
+    if (offer.media_urls && Array.isArray(offer.media_urls)) {
+      items.push(...offer.media_urls);
+    }
+    
+    // Ajouter l'image preview si elle n'est pas déjà incluse
+    if (offer.image_preview_url && !items.some(m => m.url === offer.image_preview_url)) {
+      items.unshift({ url: offer.image_preview_url, type: 'image' });
+    }
+    
+    // Ajouter la vidéo si elle n'est pas déjà incluse
+    if (offer.media_type === 'video' && offer.media_url && !items.some(m => m.url === offer.media_url)) {
+      items.push({ url: offer.media_url, type: 'video' });
+    }
+
+    return items;
+  };
+
+  const handleOpenOffer = (offer: any) => {
+    setSelectedOffer(offer);
+    setCurrentMediaIndex(0);
+  };
+
+  const handlePrevMedia = () => {
+    if (!selectedOffer) return;
+    const items = getMediaItems(selectedOffer);
+    setCurrentMediaIndex(prev => (prev === 0 ? items.length - 1 : prev - 1));
+  };
+
+  const handleNextMedia = () => {
+    if (!selectedOffer) return;
+    const items = getMediaItems(selectedOffer);
+    setCurrentMediaIndex(prev => (prev === items.length - 1 ? 0 : prev + 1));
   };
 
   if (isLoading) {
@@ -196,7 +240,7 @@ export const OffersSection = () => {
                   <Button 
                     className="flex-1 bg-gradient-button shadow-glow-cyan" 
                     size="sm"
-                    onClick={() => setSelectedOffer(offer)}
+                    onClick={() => handleOpenOffer(offer)}
                   >
                     <Eye className="h-4 w-4 mr-2" />
                     Voir détails
@@ -219,9 +263,9 @@ export const OffersSection = () => {
         )}
       </div>
 
-      {/* Dialog pour voir les détails avec média */}
+      {/* Dialog pour voir les détails avec médias */}
       <Dialog open={!!selectedOffer} onOpenChange={() => setSelectedOffer(null)}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-2xl">{selectedOffer?.title}</DialogTitle>
             <DialogDescription>
@@ -229,27 +273,90 @@ export const OffersSection = () => {
             </DialogDescription>
           </DialogHeader>
           
-          {/* Affichage média (image ou vidéo) */}
-          {(selectedOffer?.image_preview_url || selectedOffer?.media_url) && (
-            <div className="relative rounded-lg overflow-hidden bg-muted">
-              {selectedOffer?.media_type === 'video' && selectedOffer?.media_url ? (
-                <video 
-                  controls 
-                  className="w-full max-h-[400px] object-contain"
-                  poster={selectedOffer?.image_preview_url || undefined}
-                >
-                  <source src={selectedOffer.media_url} type="video/mp4" />
-                  Votre navigateur ne supporte pas la lecture de vidéos.
-                </video>
-              ) : selectedOffer?.image_preview_url ? (
-                <img 
-                  src={selectedOffer.image_preview_url} 
-                  alt={selectedOffer?.title}
-                  className="w-full max-h-[400px] object-contain"
-                />
-              ) : null}
-            </div>
-          )}
+          {/* Galerie de médias */}
+          {selectedOffer && (() => {
+            const mediaItems = getMediaItems(selectedOffer);
+            
+            if (mediaItems.length === 0) return null;
+
+            const currentMedia = mediaItems[currentMediaIndex];
+
+            return (
+              <div className="space-y-4">
+                {/* Média principal */}
+                <div className="relative rounded-lg overflow-hidden bg-muted min-h-[300px] flex items-center justify-center">
+                  {currentMedia?.type === 'video' ? (
+                    <video 
+                      key={currentMedia.url}
+                      controls 
+                      className="w-full max-h-[500px] object-contain"
+                      autoPlay={false}
+                    >
+                      <source src={currentMedia.url} type="video/mp4" />
+                      Votre navigateur ne supporte pas la lecture de vidéos.
+                    </video>
+                  ) : currentMedia?.type === 'image' ? (
+                    <img 
+                      src={currentMedia.url} 
+                      alt={selectedOffer?.title}
+                      className="w-full max-h-[500px] object-contain"
+                    />
+                  ) : null}
+
+                  {/* Navigation arrows */}
+                  {mediaItems.length > 1 && (
+                    <>
+                      <Button
+                        variant="secondary"
+                        size="icon"
+                        className="absolute left-2 top-1/2 -translate-y-1/2 opacity-80 hover:opacity-100"
+                        onClick={handlePrevMedia}
+                      >
+                        <ChevronLeft className="h-6 w-6" />
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="icon"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 opacity-80 hover:opacity-100"
+                        onClick={handleNextMedia}
+                      >
+                        <ChevronRight className="h-6 w-6" />
+                      </Button>
+                    </>
+                  )}
+                </div>
+
+                {/* Thumbnails */}
+                {mediaItems.length > 1 && (
+                  <div className="flex gap-2 overflow-x-auto pb-2">
+                    {mediaItems.map((media, index) => (
+                      <button
+                        key={index}
+                        onClick={() => setCurrentMediaIndex(index)}
+                        className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-all ${
+                          index === currentMediaIndex 
+                            ? 'border-primary' 
+                            : 'border-transparent opacity-60 hover:opacity-100'
+                        }`}
+                      >
+                        {media.type === 'video' ? (
+                          <div className="w-full h-full bg-muted flex items-center justify-center">
+                            <Play className="h-6 w-6 text-muted-foreground" />
+                          </div>
+                        ) : (
+                          <img 
+                            src={media.url} 
+                            alt={`Thumbnail ${index}`}
+                            className="w-full h-full object-cover"
+                          />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           <div className="space-y-4">
             <div className="flex items-center gap-2">
@@ -268,7 +375,7 @@ export const OffersSection = () => {
               </div>
             </div>
 
-            <p className="text-muted-foreground">{selectedOffer?.description}</p>
+            <p className="text-muted-foreground whitespace-pre-wrap">{selectedOffer?.description}</p>
 
             {selectedOffer?.tags && selectedOffer.tags.length > 0 && (
               <div className="flex flex-wrap gap-2">

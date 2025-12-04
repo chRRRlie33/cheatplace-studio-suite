@@ -158,6 +158,7 @@ export type Database = {
           image_preview_url: string | null
           media_type: string | null
           media_url: string | null
+          media_urls: Json | null
           price: number
           tags: string[] | null
           title: string
@@ -175,6 +176,7 @@ export type Database = {
           image_preview_url?: string | null
           media_type?: string | null
           media_url?: string | null
+          media_urls?: Json | null
           price?: number
           tags?: string[] | null
           title: string
@@ -192,6 +194,7 @@ export type Database = {
           image_preview_url?: string | null
           media_type?: string | null
           media_url?: string | null
+          media_urls?: Json | null
           price?: number
           tags?: string[] | null
           title?: string
