@@ -39,12 +39,34 @@ export const OffersSection = () => {
       // Enregistrer le téléchargement pour l'utilisateur connecté
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
+        // Récupérer le profil utilisateur
+        const { data: profileData } = await supabase
+          .from("profiles")
+          .select("username")
+          .eq("id", user.id)
+          .single();
+
         await supabase
           .from("user_downloads")
           .insert({
             user_id: user.id,
             offer_id: offer.id
           });
+
+        // Log du téléchargement avec détails
+        const now = new Date();
+        await supabase.from("logs").insert({
+          user_id: user.id,
+          action_type: "download",
+          message: `Téléchargement de "${offer.title}" par ${profileData?.username || 'Utilisateur'}`,
+          metadata: {
+            offer_id: offer.id,
+            offer_title: offer.title,
+            username: profileData?.username,
+            date: now.toLocaleDateString('fr-FR'),
+            time: now.toLocaleTimeString('fr-FR')
+          }
+        });
       }
 
       // Construire une URL de téléchargement forcé via le paramètre `download`

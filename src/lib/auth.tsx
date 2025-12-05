@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
+import { isDisposableEmail } from "@/lib/disposable-emails";
 
 type AppRole = "client" | "vendor" | "admin";
 
@@ -164,6 +165,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const signIn = async (email: string, password: string) => {
     try {
+      // Vérifier si c'est un email temporaire
+      if (isDisposableEmail(email)) {
+        return { error: { message: "Les emails temporaires ne sont pas autorisés. Veuillez utiliser une adresse email permanente." } };
+      }
+
       // Vérifier si l'email est banni AVANT la connexion
       const isEmailBanned = await checkBannedEmail(email);
       if (isEmailBanned) {
@@ -194,10 +200,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           return { error: { message: "Ce compte a été banni. Accès refusé." } };
         }
 
-        // Update last login, increment login count, and store IP
+        // Récupérer les infos du profil
         const { data: profileData } = await supabase
           .from("profiles")
-          .select("login_count")
+          .select("login_count, username")
           .eq("id", data.user.id)
           .single();
 
@@ -210,12 +216,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           })
           .eq("id", data.user.id);
 
-        // Log login with IP
+        // Log connexion avec détails complets
+        const now = new Date();
         await supabase.from("logs").insert({
           user_id: data.user.id,
           action_type: "login",
-          message: "Connexion réussie",
-          metadata: { email, ip: clientIP },
+          message: `Connexion de ${profileData?.username || 'Utilisateur'}`,
+          metadata: { 
+            email, 
+            username: profileData?.username,
+            ip: clientIP,
+            date: now.toLocaleDateString('fr-FR'),
+            time: now.toLocaleTimeString('fr-FR')
+          },
         });
       }
 
@@ -227,6 +240,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const signUp = async (username: string, email: string, password: string, role: AppRole = "client") => {
     try {
+      // Vérifier si c'est un email temporaire
+      if (isDisposableEmail(email)) {
+        return { error: { message: "Les emails temporaires ne sont pas autorisés. Veuillez utiliser une adresse email permanente." } };
+      }
+
       const redirectUrl = `${window.location.origin}/`;
       
       const { data, error } = await supabase.auth.signUp({
@@ -243,6 +261,22 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       if (error) throw error;
 
+      // Log inscription avec détails complets
+      if (data.user) {
+        const now = new Date();
+        await supabase.from("logs").insert({
+          user_id: data.user.id,
+          action_type: "signup",
+          message: `Inscription de ${username}`,
+          metadata: { 
+            email, 
+            username,
+            date: now.toLocaleDateString('fr-FR'),
+            time: now.toLocaleTimeString('fr-FR')
+          },
+        });
+      }
+
       return { error: null };
     } catch (error: any) {
       return { error };
@@ -251,12 +285,25 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const signOut = async () => {
     try {
-      // Essayer d'enregistrer le log de déconnexion
+      // Essayer d'enregistrer le log de déconnexion avec détails
       if (user) {
+        const { data: profileData } = await supabase
+          .from("profiles")
+          .select("username")
+          .eq("id", user.id)
+          .single();
+
+        const now = new Date();
         const { error } = await supabase.from("logs").insert({
           user_id: user.id,
           action_type: "logout",
-          message: "Déconnexion",
+          message: `Déconnexion de ${profileData?.username || 'Utilisateur'}`,
+          metadata: { 
+            email: user.email,
+            username: profileData?.username,
+            date: now.toLocaleDateString('fr-FR'),
+            time: now.toLocaleTimeString('fr-FR')
+          },
         });
 
         if (error) {
