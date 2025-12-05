@@ -1,7 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, Package, Megaphone, Download, TrendingUp } from "lucide-react";
+import { Users, Package, Megaphone, Download, TrendingUp, UserPlus, Calendar } from "lucide-react";
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
+import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, LineChart, Line, CartesianGrid } from "recharts";
+import { format, subDays, startOfDay, parseISO } from "date-fns";
+import { fr } from "date-fns/locale";
+
+type LogMetadata = {
+  username?: string;
+  email?: string;
+  offer_title?: string;
+  [key: string]: unknown;
+};
 
 export const StatsOverview = () => {
   const { data: stats, isLoading } = useQuery({
@@ -22,6 +33,45 @@ export const StatsOverview = () => {
         announcementsCount: announcementsResult.count || 0,
         totalDownloads,
       };
+    },
+  });
+
+  // Fetch logs for charts (last 7 days)
+  const { data: chartData } = useQuery({
+    queryKey: ["dashboard-charts"],
+    queryFn: async () => {
+      const sevenDaysAgo = subDays(new Date(), 7).toISOString();
+      
+      const { data: logs } = await supabase
+        .from("logs")
+        .select("action_type, created_at, metadata")
+        .gte("created_at", sevenDaysAgo)
+        .order("created_at", { ascending: true });
+
+      // Group by day
+      const last7Days = Array.from({ length: 7 }, (_, i) => {
+        const date = subDays(new Date(), 6 - i);
+        return {
+          date: format(date, "dd/MM", { locale: fr }),
+          fullDate: startOfDay(date).toISOString(),
+          downloads: 0,
+          signups: 0,
+        };
+      });
+
+      logs?.forEach((log) => {
+        const logDate = startOfDay(parseISO(log.created_at)).toISOString();
+        const dayData = last7Days.find((d) => d.fullDate === logDate);
+        if (dayData) {
+          if (log.action_type === "download") {
+            dayData.downloads++;
+          } else if (log.action_type === "signup") {
+            dayData.signups++;
+          }
+        }
+      });
+
+      return last7Days;
     },
   });
 
@@ -56,6 +106,17 @@ export const StatsOverview = () => {
     },
   ];
 
+  const chartConfig = {
+    downloads: {
+      label: "Téléchargements",
+      color: "hsl(var(--primary))",
+    },
+    signups: {
+      label: "Inscriptions",
+      color: "hsl(var(--accent))",
+    },
+  };
+
   return (
     <div className="space-y-6 animate-slide-up">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -84,6 +145,81 @@ export const StatsOverview = () => {
             </Card>
           );
         })}
+      </div>
+
+      {/* Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Downloads Chart */}
+        <Card className="card-glow">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Download className="h-5 w-5 text-primary" />
+              Téléchargements (7 derniers jours)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ChartContainer config={chartConfig} className="h-[250px] w-full">
+              <BarChart data={chartData || []}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                <XAxis 
+                  dataKey="date" 
+                  tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <YAxis 
+                  tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+                  tickLine={false}
+                  axisLine={false}
+                  allowDecimals={false}
+                />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Bar 
+                  dataKey="downloads" 
+                  fill="hsl(var(--primary))" 
+                  radius={[4, 4, 0, 0]}
+                />
+              </BarChart>
+            </ChartContainer>
+          </CardContent>
+        </Card>
+
+        {/* Signups Chart */}
+        <Card className="card-glow">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <UserPlus className="h-5 w-5 text-accent" />
+              Inscriptions (7 derniers jours)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ChartContainer config={chartConfig} className="h-[250px] w-full">
+              <LineChart data={chartData || []}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                <XAxis 
+                  dataKey="date" 
+                  tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <YAxis 
+                  tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+                  tickLine={false}
+                  axisLine={false}
+                  allowDecimals={false}
+                />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Line 
+                  type="monotone" 
+                  dataKey="signups" 
+                  stroke="hsl(var(--accent))" 
+                  strokeWidth={2}
+                  dot={{ fill: "hsl(var(--accent))", strokeWidth: 2 }}
+                />
+              </LineChart>
+            </ChartContainer>
+          </CardContent>
+        </Card>
       </div>
 
       <Card className="card-glow">
