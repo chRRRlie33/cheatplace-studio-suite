@@ -154,7 +154,7 @@ const handler = async (req: Request): Promise<Response> => {
           Authorization: `Bearer ${RESEND_API_KEY}`,
         },
         body: JSON.stringify({
-          from: "CHEATPLACE <onboarding@resend.dev>",
+          from: "CHEATPLACE <noreply@cheatplace-studio.com>",
           to: [email],
           subject: `Votre code de vérification • CHEATPLACE`,
           html: emailHtml,
