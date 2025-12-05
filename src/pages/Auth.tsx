@@ -11,6 +11,7 @@ import { Shield, Mail, Lock } from "lucide-react";
 import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
+import { isDisposableEmail } from "@/lib/disposable-emails";
 
 const loginSchema = z.object({
   email: z.string().email({ message: "Email invalide" }),
@@ -159,6 +160,13 @@ const Auth = () => {
       
       setLoading(true);
 
+      // Vérifier si c'est un email temporaire
+      if (isDisposableEmail(loginEmail)) {
+        toast.error("Les emails temporaires ne sont pas autorisés. Veuillez utiliser une adresse email permanente.");
+        setLoading(false);
+        return;
+      }
+
       // Vérifier si l'IP est bannie AVANT tout
       const clientIP = await getClientIP();
       if (clientIP) {
@@ -211,6 +219,13 @@ const Auth = () => {
       });
       
       setLoading(true);
+
+      // Vérifier si c'est un email temporaire
+      if (isDisposableEmail(signupEmail)) {
+        toast.error("Les emails temporaires ne sont pas autorisés. Veuillez utiliser une adresse email permanente.");
+        setLoading(false);
+        return;
+      }
 
       // Vérifier si l'IP est bannie
       const clientIP = await getClientIP();

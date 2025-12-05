@@ -42,11 +42,11 @@ export const Navbar = () => {
       <div className="container mx-auto px-4 py-4 flex items-center justify-between">
         <Link to="/" className="flex items-center gap-3 group">
           <Shield className="h-8 w-8 text-primary animate-glow" />
-          <div className="flex flex-col">
-            <h1 className="text-2xl font-display font-bold text-glow-cyan">
+          <div className="flex flex-col" translate="no">
+            <h1 className="text-2xl font-display font-bold text-glow-cyan notranslate">
               CHEATPLACE
             </h1>
-            <span className="text-xs text-muted-foreground">-STUDIO</span>
+            <span className="text-xs text-muted-foreground notranslate">-STUDIO</span>
           </div>
         </Link>
 
