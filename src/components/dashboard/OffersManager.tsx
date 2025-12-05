@@ -13,7 +13,8 @@ import { Plus, Edit, Trash2, Download, Upload, Image, Video, X } from "lucide-re
 import { toast } from "sonner";
 import { z } from "zod";
 
-const MAX_FILE_SIZE = 150 * 1024 * 1024; // 150 MB
+const MAX_FILE_SIZE = 150 * 1024 * 1024; // 150 MB pour fichier téléchargeable
+// Pas de limite pour les médias (images/vidéos)
 
 const offerSchema = z.object({
   title: z.string().min(3, "Le titre doit contenir au moins 3 caractères").max(100),
@@ -29,7 +30,7 @@ interface MediaFile {
 }
 
 export const OffersManager = () => {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingOffer, setEditingOffer] = useState<any>(null);
@@ -42,18 +43,27 @@ export const OffersManager = () => {
   const [mediaFiles, setMediaFiles] = useState<MediaFile[]>([]);
   const [uploading, setUploading] = useState(false);
 
-  const { data: offers, isLoading } = useQuery({
-    queryKey: ["my-offers"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("offers")
-        .select("*")
-        .eq("vendor_id", user?.id)
-        .order("created_at", { ascending: false });
+  const isAdmin = role === 'admin';
 
+  // Admins voient toutes les offres, vendors voient seulement les leurs
+  const { data: offers, isLoading } = useQuery({
+    queryKey: ["managed-offers", user?.id, isAdmin],
+    queryFn: async () => {
+      let query = supabase
+        .from("offers")
+        .select("*, profiles:vendor_id(username)")
+        .order("created_at", { ascending: false });
+      
+      // Les admins voient toutes les offres, les vendors seulement les leurs
+      if (!isAdmin) {
+        query = query.eq("vendor_id", user?.id);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
       return data;
     },
+    enabled: !!user?.id,
   });
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -76,11 +86,7 @@ export const OffersManager = () => {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       
-      if (file.size > MAX_FILE_SIZE) {
-        toast.error(`Le fichier ${file.name} dépasse la limite de 150 MB`);
-        continue;
-      }
-
+      // Pas de limite de taille pour les médias (images/vidéos)
       const isImage = file.type.startsWith('image/');
       const isVideo = file.type.startsWith('video/');
 
@@ -203,7 +209,7 @@ export const OffersManager = () => {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["my-offers"] });
+      queryClient.invalidateQueries({ queryKey: ["managed-offers"] });
       queryClient.invalidateQueries({ queryKey: ["offers"] });
       toast.success("Offre créée avec succès !");
       resetForm();
@@ -283,7 +289,7 @@ export const OffersManager = () => {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["my-offers"] });
+      queryClient.invalidateQueries({ queryKey: ["managed-offers"] });
       queryClient.invalidateQueries({ queryKey: ["offers"] });
       toast.success("Offre modifiée avec succès !");
       resetForm();
@@ -308,7 +314,7 @@ export const OffersManager = () => {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["my-offers"] });
+      queryClient.invalidateQueries({ queryKey: ["managed-offers"] });
       queryClient.invalidateQueries({ queryKey: ["offers"] });
       toast.success("Offre supprimée !");
     },
@@ -385,7 +391,7 @@ export const OffersManager = () => {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-display font-bold">Mes Offres</h2>
+        <h2 className="text-2xl font-display font-bold">{isAdmin ? "Toutes les Offres" : "Mes Offres"}</h2>
         <Dialog open={isDialogOpen} onOpenChange={handleOpenChange}>
           <DialogTrigger asChild>
             <Button className="bg-gradient-button shadow-glow-cyan">
@@ -475,7 +481,7 @@ export const OffersManager = () => {
               </div>
 
               <div className="space-y-2">
-                <Label>Images et Vidéos (max 150 MB par fichier)</Label>
+                <Label>Images et Vidéos (sans limite de taille)</Label>
                 <div className="border-2 border-dashed border-border rounded-lg p-4">
                   <Input
                     type="file"
@@ -573,62 +579,72 @@ export const OffersManager = () => {
         </Card>
       ) : (
         <div className="grid gap-4">
-          {offers.map((offer) => (
-            <Card key={offer.id} className="card-glow">
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <CardTitle className="text-xl mb-2">{offer.title}</CardTitle>
-                    <CardDescription className="line-clamp-2">
-                      {offer.description}
-                    </CardDescription>
+          {offers.map((offer: any) => {
+            const canEdit = isAdmin || offer.vendor_id === user?.id;
+            return (
+              <Card key={offer.id} className="card-glow">
+                <CardHeader>
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <CardTitle className="text-xl mb-2">{offer.title}</CardTitle>
+                      <CardDescription className="line-clamp-2">
+                        {offer.description}
+                      </CardDescription>
+                      {isAdmin && offer.profiles && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Par: {offer.profiles.username}
+                        </p>
+                      )}
+                    </div>
+                    {canEdit && (
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" onClick={() => handleEdit(offer)}>
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => {
+                            if (confirm("Supprimer cette offre ?")) {
+                              deleteMutation.mutate(offer.id);
+                            }
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
                   </div>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={() => handleEdit(offer)}>
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => {
-                        if (confirm("Supprimer cette offre ?")) {
-                          deleteMutation.mutate(offer.id);
-                        }
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap items-center gap-4">
-                  <Badge variant="default" className="bg-gradient-button">
-                    {offer.price > 0 ? `${offer.price}€` : "GRATUIT"}
-                  </Badge>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Download className="h-4 w-4" />
-                    {offer.download_count} téléchargements
-                  </div>
-                  {(offer as any).media_urls && (offer as any).media_urls.length > 0 && (
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-wrap items-center gap-4">
+                    <Badge variant="default" className="bg-gradient-button">
+                      {offer.price > 0 ? `${offer.price}€` : "GRATUIT"}
+                    </Badge>
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Image className="h-4 w-4" />
-                      {(offer as any).media_urls.length} média(s)
+                      <Download className="h-4 w-4" />
+                      {offer.download_count} téléchargements
                     </div>
-                  )}
-                  {offer.tags && offer.tags.length > 0 && (
-                    <div className="flex gap-2">
-                      {offer.tags.map((tag: string) => (
-                        <Badge key={tag} variant="outline">
-                          {tag}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                    {offer.media_urls && offer.media_urls.length > 0 && (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Image className="h-4 w-4" />
+                        {offer.media_urls.length} média(s)
+                      </div>
+                    )}
+                    {offer.tags && offer.tags.length > 0 && (
+                      <div className="flex gap-2">
+                        {offer.tags.map((tag: string) => (
+                          <Badge key={tag} variant="outline">
+                            {tag}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
     </div>
