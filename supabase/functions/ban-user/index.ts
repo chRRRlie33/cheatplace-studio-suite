@@ -17,6 +17,43 @@ const handler = async (req: Request): Promise<Response> => {
   }
 
   try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Vérifier l'authentification
+    const authHeader = req.headers.get("authorization");
+    if (!authHeader) {
+      console.log("No authorization header");
+      return new Response(
+        JSON.stringify({ error: "Non autorisé" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const token = authHeader.replace("Bearer ", "");
+    const { data: { user: callerUser }, error: authError } = await supabase.auth.getUser(token);
+
+    if (authError || !callerUser) {
+      console.log("Auth error:", authError);
+      return new Response(
+        JSON.stringify({ error: "Non autorisé" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Vérifier que l'utilisateur est admin
+    const { data: isAdmin, error: roleError } = await supabase
+      .rpc('has_role', { _user_id: callerUser.id, _role: 'admin' });
+
+    if (roleError || !isAdmin) {
+      console.log("User is not admin:", callerUser.id);
+      return new Response(
+        JSON.stringify({ error: "Accès refusé - Admin requis" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const { userId, ban }: BanRequest = await req.json();
 
     if (!userId) {
@@ -25,10 +62,6 @@ const handler = async (req: Request): Promise<Response> => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // Récupérer l'email de l'utilisateur depuis auth.users
     const { data: { user }, error: userError } = await supabase.auth.admin.getUserById(userId);
@@ -56,21 +89,12 @@ const handler = async (req: Request): Promise<Response> => {
     }
 
     if (ban) {
-      // Ajouter l'email à la liste des bannis
-      const authHeader = req.headers.get("authorization");
-      let bannedBy = null;
-      
-      if (authHeader) {
-        const token = authHeader.replace("Bearer ", "");
-        const { data: { user: currentUser } } = await supabase.auth.getUser(token);
-        bannedBy = currentUser?.id;
-      }
-
+      // Ajouter l'email à la liste des bannis (callerUser is already verified as admin)
       const { error: banError } = await supabase
         .from("banned_emails")
         .insert({
           email: user.email,
-          banned_by: bannedBy,
+          banned_by: callerUser.id,
           reason: "Banni par l'administrateur"
         });
 
