@@ -207,11 +207,24 @@ export const OffersManager = () => {
         message: `Offre créée: ${offerData.title}`,
         metadata: { title: offerData.title, hasFile: !!fileUrl, mediaCount: mediaUrls.length },
       });
+
+      // Envoyer un email à tous les utilisateurs
+      try {
+        await supabase.functions.invoke('notify-new-offer', {
+          body: {
+            offerTitle: offerData.title,
+            offerDescription: offerData.description
+          }
+        });
+      } catch (emailError) {
+        console.error("Erreur envoi emails:", emailError);
+        // Ne pas bloquer la création si l'email échoue
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["managed-offers"] });
       queryClient.invalidateQueries({ queryKey: ["offers"] });
-      toast.success("Offre créée avec succès !");
+      toast.success("Offre créée avec succès ! Emails envoyés aux utilisateurs.");
       resetForm();
       setIsDialogOpen(false);
     },
