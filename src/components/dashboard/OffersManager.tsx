@@ -182,51 +182,53 @@ export const OffersManager = () => {
   };
 
   const uploadMediaFiles = async (onProgress: (current: number, total: number) => void): Promise<{ url: string; type: string }[]> => {
+    const results: { url: string; type: string }[] = [];
     const total = mediaFiles.length;
-    let completed = 0;
 
-    // Upload tous les médias en parallèle pour plus de rapidité
-    const uploadPromises = mediaFiles.map(async (media, index) => {
+    // Upload séquentiel pour un tracking de progression fiable
+    for (let i = 0; i < mediaFiles.length; i++) {
+      const media = mediaFiles[i];
       const fileExt = media.type === 'image' ? 'jpg' : media.file.name.split('.').pop();
-      const fileName = `${user?.id}/${Date.now()}-${index}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+      const fileName = `${user?.id}/${Date.now()}-${i}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+
+      onProgress(i, total);
 
       const { error: uploadError } = await supabase.storage
         .from('offer-media')
         .upload(fileName, media.file);
 
-      completed++;
-      onProgress(completed, total);
-
       if (uploadError) {
         console.error("Media upload error:", uploadError);
-        return null;
+        continue;
       }
 
       const { data: { publicUrl } } = supabase.storage
         .from('offer-media')
         .getPublicUrl(fileName);
 
-      return { url: publicUrl, type: media.type };
-    });
+      results.push({ url: publicUrl, type: media.type });
+    }
 
-    const results = await Promise.all(uploadPromises);
-    return results.filter((r): r is { url: string; type: 'image' | 'video' } => r !== null);
+    onProgress(total, total);
+    return results;
   };
 
   const createMutation = useMutation({
     mutationFn: async (offerData: any) => {
       setUploading(true);
-      setUploadProgress(0);
+      setUploadProgress(5);
+      setUploadStatus("Préparation...");
 
       try {
-        const totalSteps = (file ? 1 : 0) + (mediaFiles.length > 0 ? 1 : 0) + 1; // +1 pour l'insertion
-        let currentStep = 0;
-
         // Upload fichier principal
-        setUploadStatus("Upload du fichier principal...");
-        let fileResult = { fileUrl: null as string | null, fileSize: null as number | null, fileFormat: null as string | null };
+        let fileUrl: string | null = null;
+        let fileSize: number | null = null;
+        let fileFormat: string | null = null;
         
         if (file && user?.id) {
+          setUploadStatus("Upload du fichier principal...");
+          setUploadProgress(10);
+          
           const fileExt = file.name.split('.').pop();
           const fileName = `${user.id}/${Date.now()}.${fileExt}`;
           
@@ -242,9 +244,10 @@ export const OffersManager = () => {
             .from('offer-files')
             .getPublicUrl(fileName);
 
-          fileResult = { fileUrl: publicUrl, fileSize: file.size, fileFormat: fileExt || null };
-          currentStep++;
-          setUploadProgress((currentStep / totalSteps) * 100);
+          fileUrl = publicUrl;
+          fileSize = file.size;
+          fileFormat = fileExt || null;
+          setUploadProgress(40);
         }
 
         // Upload médias
@@ -253,16 +256,15 @@ export const OffersManager = () => {
           setUploadStatus(`Upload des médias (0/${mediaFiles.length})...`);
           mediaUrls = await uploadMediaFiles((completed, total) => {
             setUploadStatus(`Upload des médias (${completed}/${total})...`);
-            const mediaProgress = completed / total;
-            setUploadProgress(((currentStep + mediaProgress) / totalSteps) * 100);
+            const baseProgress = file ? 40 : 10;
+            const mediaProgress = total > 0 ? (completed / total) * 50 : 0;
+            setUploadProgress(baseProgress + mediaProgress);
           });
-          currentStep++;
-          setUploadProgress((currentStep / totalSteps) * 100);
         }
 
+        setUploadProgress(90);
         setUploadStatus("Enregistrement de l'offre...");
 
-        const { fileUrl, fileSize, fileFormat } = fileResult;
         const firstImage = mediaUrls.find(m => m.type === 'image');
         const firstVideo = mediaUrls.find(m => m.type === 'video');
 
