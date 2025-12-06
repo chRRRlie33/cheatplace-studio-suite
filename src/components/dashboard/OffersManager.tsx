@@ -115,11 +115,10 @@ export const OffersManager = () => {
   };
 
   const uploadMediaFiles = async (): Promise<{ url: string; type: string }[]> => {
-    const uploadedMedia: { url: string; type: string }[] = [];
-
-    for (const media of mediaFiles) {
+    // Upload tous les médias en parallèle pour plus de rapidité
+    const uploadPromises = mediaFiles.map(async (media, index) => {
       const fileExt = media.file.name.split('.').pop();
-      const fileName = `${user?.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+      const fileName = `${user?.id}/${Date.now()}-${index}-${Math.random().toString(36).substring(7)}.${fileExt}`;
 
       const { error: uploadError } = await supabase.storage
         .from('offer-media')
@@ -127,104 +126,93 @@ export const OffersManager = () => {
 
       if (uploadError) {
         console.error("Media upload error:", uploadError);
-        continue;
+        return null;
       }
 
       const { data: { publicUrl } } = supabase.storage
         .from('offer-media')
         .getPublicUrl(fileName);
 
-      uploadedMedia.push({
-        url: publicUrl,
-        type: media.type
-      });
-    }
+      return { url: publicUrl, type: media.type };
+    });
 
-    return uploadedMedia;
+    const results = await Promise.all(uploadPromises);
+    return results.filter((r): r is { url: string; type: 'image' | 'video' } => r !== null);
   };
 
   const createMutation = useMutation({
     mutationFn: async (offerData: any) => {
-      let fileUrl = null;
-      let fileSize = null;
-      let fileFormat = null;
-      let mediaUrls: { url: string; type: string }[] = [];
-
       setUploading(true);
 
-      // Upload main file if provided
-      if (file && user?.id) {
-        const fileExt = file.name.split('.').pop();
-        const fileName = `${user.id}/${Date.now()}.${fileExt}`;
-        
-        const { error: uploadError } = await supabase.storage
-          .from('offer-files')
-          .upload(fileName, file);
-
-        if (uploadError) {
-          setUploading(false);
-          throw new Error(`Erreur d'upload: ${uploadError.message}`);
-        }
-
-        const { data: { publicUrl } } = supabase.storage
-          .from('offer-files')
-          .getPublicUrl(fileName);
-
-        fileUrl = publicUrl;
-        fileSize = file.size;
-        fileFormat = fileExt;
-      }
-
-      // Upload media files
-      if (mediaFiles.length > 0) {
-        mediaUrls = await uploadMediaFiles();
-      }
-
-      setUploading(false);
-
-      // Set first image as preview if available
-      const firstImage = mediaUrls.find(m => m.type === 'image');
-      const firstVideo = mediaUrls.find(m => m.type === 'video');
-
-      const { error } = await supabase.from("offers").insert({
-        ...offerData,
-        vendor_id: user?.id,
-        file_url: fileUrl,
-        file_size: fileSize,
-        file_format: fileFormat,
-        media_urls: mediaUrls,
-        image_preview_url: firstImage?.url || null,
-        media_url: firstVideo?.url || null,
-        media_type: firstVideo ? 'video' : (firstImage ? 'image' : null),
-      });
-
-      if (error) throw error;
-
-      // Log creation
-      await supabase.from("logs").insert({
-        user_id: user?.id,
-        action_type: "offer_created",
-        message: `Offre créée: ${offerData.title}`,
-        metadata: { title: offerData.title, hasFile: !!fileUrl, mediaCount: mediaUrls.length },
-      });
-
-      // Envoyer un email à tous les utilisateurs
       try {
-        await supabase.functions.invoke('notify-new-offer', {
-          body: {
-            offerTitle: offerData.title,
-            offerDescription: offerData.description
-          }
+        // Upload fichier principal ET médias EN PARALLÈLE
+        const [fileResult, mediaUrls] = await Promise.all([
+          // Upload fichier principal
+          (async () => {
+            if (!file || !user?.id) return { fileUrl: null, fileSize: null, fileFormat: null };
+            
+            const fileExt = file.name.split('.').pop();
+            const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+            
+            const { error: uploadError } = await supabase.storage
+              .from('offer-files')
+              .upload(fileName, file);
+
+            if (uploadError) {
+              throw new Error(`Erreur d'upload: ${uploadError.message}`);
+            }
+
+            const { data: { publicUrl } } = supabase.storage
+              .from('offer-files')
+              .getPublicUrl(fileName);
+
+            return { fileUrl: publicUrl, fileSize: file.size, fileFormat: fileExt };
+          })(),
+          // Upload médias en parallèle
+          mediaFiles.length > 0 ? uploadMediaFiles() : Promise.resolve([])
+        ]);
+
+        setUploading(false);
+
+        const { fileUrl, fileSize, fileFormat } = fileResult;
+        const firstImage = mediaUrls.find(m => m.type === 'image');
+        const firstVideo = mediaUrls.find(m => m.type === 'video');
+
+        const { error } = await supabase.from("offers").insert({
+          ...offerData,
+          vendor_id: user?.id,
+          file_url: fileUrl,
+          file_size: fileSize,
+          file_format: fileFormat,
+          media_urls: mediaUrls,
+          image_preview_url: firstImage?.url || null,
+          media_url: firstVideo?.url || null,
+          media_type: firstVideo ? 'video' : (firstImage ? 'image' : null),
         });
-      } catch (emailError) {
-        console.error("Erreur envoi emails:", emailError);
-        // Ne pas bloquer la création si l'email échoue
+
+        if (error) throw error;
+
+        // Log + notification email en parallèle (non bloquant)
+        Promise.all([
+          supabase.from("logs").insert({
+            user_id: user?.id,
+            action_type: "offer_created",
+            message: `Offre créée: ${offerData.title}`,
+            metadata: { title: offerData.title, hasFile: !!fileUrl, mediaCount: mediaUrls.length },
+          }),
+          supabase.functions.invoke('notify-new-offer', {
+            body: { offerTitle: offerData.title, offerDescription: offerData.description }
+          }).catch(e => console.error("Erreur envoi emails:", e))
+        ]);
+      } catch (error) {
+        setUploading(false);
+        throw error;
       }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["managed-offers"] });
       queryClient.invalidateQueries({ queryKey: ["offers"] });
-      toast.success("Offre créée avec succès ! Emails envoyés aux utilisateurs.");
+      toast.success("Offre créée avec succès !");
       resetForm();
       setIsDialogOpen(false);
     },
