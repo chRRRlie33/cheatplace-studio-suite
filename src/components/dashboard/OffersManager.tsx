@@ -9,12 +9,14 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Edit, Trash2, Download, Upload, Image, Video, X } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+import { Plus, Edit, Trash2, Download, Upload, Image, Video, X, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
 
-const MAX_FILE_SIZE = 150 * 1024 * 1024; // 150 MB pour fichier téléchargeable
-// Pas de limite pour les médias (images/vidéos)
+const MAX_FILE_SIZE = 150 * 1024 * 1024; // 150 MB pour tous les fichiers
+const MAX_IMAGE_DIMENSION = 1920; // Dimension max pour compression
+const COMPRESSION_QUALITY = 0.8; // Qualité de compression JPEG
 
 const offerSchema = z.object({
   title: z.string().min(3, "Le titre doit contenir au moins 3 caractères").max(100),
@@ -42,6 +44,8 @@ export const OffersManager = () => {
   const [file, setFile] = useState<File | null>(null);
   const [mediaFiles, setMediaFiles] = useState<MediaFile[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadStatus, setUploadStatus] = useState("");
 
   const isAdmin = role === 'admin';
 
@@ -77,22 +81,85 @@ export const OffersManager = () => {
     }
   };
 
-  const handleMediaChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Fonction de compression d'image
+  const compressImage = async (file: File): Promise<File> => {
+    return new Promise((resolve, reject) => {
+      const img = document.createElement('img');
+      img.onload = () => {
+        let { width, height } = img;
+        
+        // Redimensionner si nécessaire
+        if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION) {
+          if (width > height) {
+            height = Math.round((height * MAX_IMAGE_DIMENSION) / width);
+            width = MAX_IMAGE_DIMENSION;
+          } else {
+            width = Math.round((width * MAX_IMAGE_DIMENSION) / height);
+            height = MAX_IMAGE_DIMENSION;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        
+        if (!ctx) {
+          resolve(file); // Fallback si pas de contexte
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        canvas.toBlob(
+          (blob) => {
+            if (blob) {
+              const compressedFile = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), {
+                type: 'image/jpeg',
+                lastModified: Date.now(),
+              });
+              console.log(`Image compressée: ${(file.size / 1024 / 1024).toFixed(2)}MB -> ${(compressedFile.size / 1024 / 1024).toFixed(2)}MB`);
+              resolve(compressedFile);
+            } else {
+              resolve(file);
+            }
+          },
+          'image/jpeg',
+          COMPRESSION_QUALITY
+        );
+      };
+      img.onerror = () => resolve(file); // Fallback en cas d'erreur
+      img.src = URL.createObjectURL(file);
+    });
+  };
+
+  const handleMediaChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
 
     const newMediaFiles: MediaFile[] = [];
     
     for (let i = 0; i < files.length; i++) {
-      const file = files[i];
+      let file = files[i];
       
-      // Pas de limite de taille pour les médias (images/vidéos)
+      // Limite de 150MB pour les médias
+      if (file.size > MAX_FILE_SIZE) {
+        toast.error(`${file.name} dépasse la limite de 150 MB`);
+        continue;
+      }
+
       const isImage = file.type.startsWith('image/');
       const isVideo = file.type.startsWith('video/');
 
       if (!isImage && !isVideo) {
         toast.error(`${file.name} n'est pas un fichier média valide`);
         continue;
+      }
+
+      // Compresser les images automatiquement
+      if (isImage && file.size > 500 * 1024) { // Compresser si > 500KB
+        toast.info(`Compression de ${file.name}...`);
+        file = await compressImage(file);
       }
 
       newMediaFiles.push({
@@ -114,15 +181,21 @@ export const OffersManager = () => {
     });
   };
 
-  const uploadMediaFiles = async (): Promise<{ url: string; type: string }[]> => {
+  const uploadMediaFiles = async (onProgress: (current: number, total: number) => void): Promise<{ url: string; type: string }[]> => {
+    const total = mediaFiles.length;
+    let completed = 0;
+
     // Upload tous les médias en parallèle pour plus de rapidité
     const uploadPromises = mediaFiles.map(async (media, index) => {
-      const fileExt = media.file.name.split('.').pop();
+      const fileExt = media.type === 'image' ? 'jpg' : media.file.name.split('.').pop();
       const fileName = `${user?.id}/${Date.now()}-${index}-${Math.random().toString(36).substring(7)}.${fileExt}`;
 
       const { error: uploadError } = await supabase.storage
         .from('offer-media')
         .upload(fileName, media.file);
+
+      completed++;
+      onProgress(completed, total);
 
       if (uploadError) {
         console.error("Media upload error:", uploadError);
@@ -143,36 +216,51 @@ export const OffersManager = () => {
   const createMutation = useMutation({
     mutationFn: async (offerData: any) => {
       setUploading(true);
+      setUploadProgress(0);
 
       try {
-        // Upload fichier principal ET médias EN PARALLÈLE
-        const [fileResult, mediaUrls] = await Promise.all([
-          // Upload fichier principal
-          (async () => {
-            if (!file || !user?.id) return { fileUrl: null, fileSize: null, fileFormat: null };
-            
-            const fileExt = file.name.split('.').pop();
-            const fileName = `${user.id}/${Date.now()}.${fileExt}`;
-            
-            const { error: uploadError } = await supabase.storage
-              .from('offer-files')
-              .upload(fileName, file);
+        const totalSteps = (file ? 1 : 0) + (mediaFiles.length > 0 ? 1 : 0) + 1; // +1 pour l'insertion
+        let currentStep = 0;
 
-            if (uploadError) {
-              throw new Error(`Erreur d'upload: ${uploadError.message}`);
-            }
+        // Upload fichier principal
+        setUploadStatus("Upload du fichier principal...");
+        let fileResult = { fileUrl: null as string | null, fileSize: null as number | null, fileFormat: null as string | null };
+        
+        if (file && user?.id) {
+          const fileExt = file.name.split('.').pop();
+          const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+          
+          const { error: uploadError } = await supabase.storage
+            .from('offer-files')
+            .upload(fileName, file);
 
-            const { data: { publicUrl } } = supabase.storage
-              .from('offer-files')
-              .getPublicUrl(fileName);
+          if (uploadError) {
+            throw new Error(`Erreur d'upload: ${uploadError.message}`);
+          }
 
-            return { fileUrl: publicUrl, fileSize: file.size, fileFormat: fileExt };
-          })(),
-          // Upload médias en parallèle
-          mediaFiles.length > 0 ? uploadMediaFiles() : Promise.resolve([])
-        ]);
+          const { data: { publicUrl } } = supabase.storage
+            .from('offer-files')
+            .getPublicUrl(fileName);
 
-        setUploading(false);
+          fileResult = { fileUrl: publicUrl, fileSize: file.size, fileFormat: fileExt || null };
+          currentStep++;
+          setUploadProgress((currentStep / totalSteps) * 100);
+        }
+
+        // Upload médias
+        let mediaUrls: { url: string; type: string }[] = [];
+        if (mediaFiles.length > 0) {
+          setUploadStatus(`Upload des médias (0/${mediaFiles.length})...`);
+          mediaUrls = await uploadMediaFiles((completed, total) => {
+            setUploadStatus(`Upload des médias (${completed}/${total})...`);
+            const mediaProgress = completed / total;
+            setUploadProgress(((currentStep + mediaProgress) / totalSteps) * 100);
+          });
+          currentStep++;
+          setUploadProgress((currentStep / totalSteps) * 100);
+        }
+
+        setUploadStatus("Enregistrement de l'offre...");
 
         const { fileUrl, fileSize, fileFormat } = fileResult;
         const firstImage = mediaUrls.find(m => m.type === 'image');
@@ -192,6 +280,9 @@ export const OffersManager = () => {
 
         if (error) throw error;
 
+        setUploadProgress(100);
+        setUploadStatus("Terminé !");
+
         // Log + notification email en parallèle (non bloquant)
         Promise.all([
           supabase.from("logs").insert({
@@ -206,6 +297,8 @@ export const OffersManager = () => {
         ]);
       } catch (error) {
         setUploading(false);
+        setUploadProgress(0);
+        setUploadStatus("");
         throw error;
       }
     },
@@ -215,9 +308,15 @@ export const OffersManager = () => {
       toast.success("Offre créée avec succès !");
       resetForm();
       setIsDialogOpen(false);
+      setUploading(false);
+      setUploadProgress(0);
+      setUploadStatus("");
     },
     onError: (error: any) => {
       toast.error(error.message || "Erreur lors de la création");
+      setUploading(false);
+      setUploadProgress(0);
+      setUploadStatus("");
     },
   });
 
@@ -255,7 +354,7 @@ export const OffersManager = () => {
 
       // Upload new media files
       if (mediaFiles.length > 0) {
-        const newMedia = await uploadMediaFiles();
+        const newMedia = await uploadMediaFiles(() => {});
         mediaUrls = [...(mediaUrls || []), ...newMedia];
       }
 
@@ -482,7 +581,7 @@ export const OffersManager = () => {
               </div>
 
               <div className="space-y-2">
-                <Label>Images et Vidéos (sans limite de taille)</Label>
+                <Label>Images et Vidéos (max 150 MB chacun, compression auto)</Label>
                 <div className="border-2 border-dashed border-border rounded-lg p-4">
                   <Input
                     type="file"
@@ -490,9 +589,10 @@ export const OffersManager = () => {
                     accept="image/*,video/*"
                     multiple
                     className="cursor-pointer"
+                    disabled={uploading}
                   />
                   <p className="text-xs text-muted-foreground mt-2">
-                    Formats acceptés: images (jpg, png, gif, webp) et vidéos (mp4, webm, mov)
+                    Images compressées automatiquement. Formats: jpg, png, gif, webp, mp4, webm, mov
                   </p>
                 </div>
 
@@ -555,8 +655,20 @@ export const OffersManager = () => {
                 )}
               </div>
 
+              {/* Barre de progression */}
+              {uploading && (
+                <div className="space-y-2 p-4 bg-muted/50 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                    <span className="text-sm font-medium">{uploadStatus}</span>
+                  </div>
+                  <Progress value={uploadProgress} className="h-2" />
+                  <p className="text-xs text-muted-foreground text-right">{Math.round(uploadProgress)}%</p>
+                </div>
+              )}
+
               <div className="flex justify-end gap-2 pt-4">
-                <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
+                <Button type="button" variant="outline" onClick={() => handleOpenChange(false)} disabled={uploading}>
                   Annuler
                 </Button>
                 <Button 
@@ -564,7 +676,12 @@ export const OffersManager = () => {
                   className="bg-gradient-button shadow-glow-cyan"
                   disabled={uploading}
                 >
-                  {uploading ? "Upload en cours..." : editingOffer ? "Modifier" : "Créer"}
+                  {uploading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Upload en cours...
+                    </>
+                  ) : editingOffer ? "Modifier" : "Créer"}
                 </Button>
               </div>
             </form>
