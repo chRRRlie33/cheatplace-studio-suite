@@ -9,6 +9,7 @@ import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import UserStats from "./pages/UserStats";
 import NotFound from "./pages/NotFound";
+import { AdminNotifications } from "@/components/AdminNotifications";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -86,6 +87,7 @@ const App = () => (
           <TooltipProvider>
             <Toaster />
             <Sonner />
+            <AdminNotifications />
             <Routes>
               <Route path="/" element={<Index />} />
               <Route path="/auth" element={<Auth />} />
