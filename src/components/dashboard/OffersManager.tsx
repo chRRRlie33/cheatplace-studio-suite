@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Plus, Edit, Trash2, Download, Upload, Image, Video, X, Loader2 } from "lucide-react";
+import { Plus, Edit, Trash2, Download, Upload, Image, Video, X, Loader2, GripVertical } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
 
@@ -46,6 +46,9 @@ export const OffersManager = () => {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStatus, setUploadStatus] = useState("");
+  const [isDragging, setIsDragging] = useState(false);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const dropZoneRef = useRef<HTMLDivElement>(null);
 
   const isAdmin = role === 'admin';
 
@@ -179,6 +182,93 @@ export const OffersManager = () => {
       newFiles.splice(index, 1);
       return newFiles;
     });
+  };
+
+  // Drag and Drop handlers
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.currentTarget === dropZoneRef.current) {
+      setIsDragging(false);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const files = e.dataTransfer.files;
+    if (!files || files.length === 0) return;
+
+    const newMediaFiles: MediaFile[] = [];
+    
+    for (let i = 0; i < files.length; i++) {
+      let file = files[i];
+      
+      if (file.size > MAX_FILE_SIZE) {
+        toast.error(`${file.name} dépasse la limite de 150 MB`);
+        continue;
+      }
+
+      const isImage = file.type.startsWith('image/');
+      const isVideo = file.type.startsWith('video/');
+
+      if (!isImage && !isVideo) {
+        toast.error(`${file.name} n'est pas un fichier média valide`);
+        continue;
+      }
+
+      if (isImage && file.size > 500 * 1024) {
+        toast.info(`Compression de ${file.name}...`);
+        file = await compressImage(file);
+      }
+
+      newMediaFiles.push({
+        file,
+        type: isImage ? 'image' : 'video',
+        preview: URL.createObjectURL(file)
+      });
+    }
+
+    setMediaFiles(prev => [...prev, ...newMediaFiles]);
+    if (newMediaFiles.length > 0) {
+      toast.success(`${newMediaFiles.length} fichier(s) ajouté(s)`);
+    }
+  }, []);
+
+  // Réorganisation par drag
+  const handleMediaDragStart = (index: number) => {
+    setDraggedIndex(index);
+  };
+
+  const handleMediaDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === index) return;
+    
+    setMediaFiles(prev => {
+      const newFiles = [...prev];
+      const draggedItem = newFiles[draggedIndex];
+      newFiles.splice(draggedIndex, 1);
+      newFiles.splice(index, 0, draggedItem);
+      return newFiles;
+    });
+    setDraggedIndex(index);
+  };
+
+  const handleMediaDragEnd = () => {
+    setDraggedIndex(null);
   };
 
   const uploadMediaFiles = async (onProgress: (current: number, total: number) => void): Promise<{ url: string; type: string }[]> => {
@@ -584,25 +674,51 @@ export const OffersManager = () => {
 
               <div className="space-y-2">
                 <Label>Images et Vidéos (max 150 MB chacun, compression auto)</Label>
-                <div className="border-2 border-dashed border-border rounded-lg p-4">
+                <div 
+                  ref={dropZoneRef}
+                  onDragEnter={handleDragEnter}
+                  onDragLeave={handleDragLeave}
+                  onDragOver={handleDragOver}
+                  onDrop={handleDrop}
+                  className={`border-2 border-dashed rounded-lg p-6 transition-colors text-center ${
+                    isDragging 
+                      ? 'border-primary bg-primary/10' 
+                      : 'border-border hover:border-primary/50'
+                  }`}
+                >
+                  <Upload className={`h-8 w-8 mx-auto mb-2 ${isDragging ? 'text-primary' : 'text-muted-foreground'}`} />
+                  <p className="text-sm font-medium mb-1">
+                    {isDragging ? 'Déposez les fichiers ici' : 'Glissez-déposez vos médias ici'}
+                  </p>
+                  <p className="text-xs text-muted-foreground mb-3">ou</p>
                   <Input
                     type="file"
                     onChange={handleMediaChange}
                     accept="image/*,video/*"
                     multiple
-                    className="cursor-pointer"
+                    className="cursor-pointer max-w-[200px] mx-auto"
                     disabled={uploading}
                   />
-                  <p className="text-xs text-muted-foreground mt-2">
+                  <p className="text-xs text-muted-foreground mt-3">
                     Images compressées automatiquement. Formats: jpg, png, gif, webp, mp4, webm, mov
                   </p>
                 </div>
 
-                {/* Preview des médias sélectionnés */}
+                {/* Preview des médias sélectionnés avec réorganisation */}
                 {mediaFiles.length > 0 && (
                   <div className="grid grid-cols-3 gap-2 mt-2">
                     {mediaFiles.map((media, index) => (
-                      <div key={index} className="relative group">
+                      <div 
+                        key={index} 
+                        className={`relative group cursor-move ${draggedIndex === index ? 'opacity-50' : ''}`}
+                        draggable
+                        onDragStart={() => handleMediaDragStart(index)}
+                        onDragOver={(e) => handleMediaDragOver(e, index)}
+                        onDragEnd={handleMediaDragEnd}
+                      >
+                        <div className="absolute top-1 left-1 z-10 bg-background/80 rounded p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <GripVertical className="h-3 w-3 text-muted-foreground" />
+                        </div>
                         {media.type === 'image' ? (
                           <img 
                             src={media.preview} 

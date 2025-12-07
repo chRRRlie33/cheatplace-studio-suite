@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Navbar } from "@/components/Navbar";
-import { Download, LogIn, Package } from "lucide-react";
+import { Download, LogIn, Package, Calendar } from "lucide-react";
 
 export default function UserStats() {
   const { user, loading } = useAuth();
@@ -17,7 +17,7 @@ export default function UserStats() {
     }
   }, [user, loading, navigate]);
 
-  const { data: profile } = useQuery({
+  const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ["profile", user?.id],
     queryFn: async () => {
       if (!user) return null;
@@ -31,9 +31,12 @@ export default function UserStats() {
       return data;
     },
     enabled: !!user,
+    staleTime: 0, // Toujours refetch
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
   });
 
-  const { data: downloads } = useQuery({
+  const { data: downloads, isLoading: downloadsLoading } = useQuery({
     queryKey: ["user-downloads", user?.id],
     queryFn: async () => {
       if (!user) return [];
@@ -50,7 +53,12 @@ export default function UserStats() {
       return data;
     },
     enabled: !!user,
+    staleTime: 0,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
   });
+
+  const isLoadingData = loading || profileLoading || downloadsLoading;
 
   if (loading) {
     return (
@@ -65,6 +73,15 @@ export default function UserStats() {
   // Compter les téléchargements uniques
   const uniqueDownloads = downloads ? new Set(downloads.map(d => d.offer_id)).size : 0;
   const totalDownloads = downloads?.length || 0;
+  
+  // Formater la date de création
+  const memberSince = profile?.created_at 
+    ? new Date(profile.created_at).toLocaleDateString('fr-FR', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+      })
+    : 'N/A';
 
   return (
     <div className="min-h-screen bg-background">
@@ -116,11 +133,11 @@ export default function UserStats() {
                 <CardTitle className="text-sm font-medium">
                   Membre depuis
                 </CardTitle>
-                <Package className="h-4 w-4 text-accent" />
+                <Calendar className="h-4 w-4 text-accent" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  {profile?.created_at ? new Date(profile.created_at).toLocaleDateString('fr-FR') : 'N/A'}
+                  {memberSince}
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Rôle: {profile?.role || 'client'}
