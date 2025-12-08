@@ -245,6 +245,7 @@ export type Database = {
           created_at: string
           id: string
           ip_last_login: string | null
+          ip_signup: string | null
           last_login: string | null
           login_count: number
           role: Database["public"]["Enums"]["app_role"]
@@ -256,6 +257,7 @@ export type Database = {
           created_at?: string
           id: string
           ip_last_login?: string | null
+          ip_signup?: string | null
           last_login?: string | null
           login_count?: number
           role?: Database["public"]["Enums"]["app_role"]
@@ -267,6 +269,7 @@ export type Database = {
           created_at?: string
           id?: string
           ip_last_login?: string | null
+          ip_signup?: string | null
           last_login?: string | null
           login_count?: number
           role?: Database["public"]["Enums"]["app_role"]

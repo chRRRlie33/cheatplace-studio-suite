@@ -245,6 +245,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return { error: { message: "Les emails temporaires ne sont pas autorisés. Veuillez utiliser une adresse email permanente." } };
       }
 
+      // Récupérer l'IP du client pour l'inscription
+      const clientIP = await getClientIP();
+
       const redirectUrl = `${window.location.origin}/`;
       
       const { data, error } = await supabase.auth.signUp({
@@ -261,8 +264,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       if (error) throw error;
 
-      // Log inscription avec détails complets
+      // Mettre à jour le profil avec l'IP d'inscription et de connexion
       if (data.user) {
+        await supabase
+          .from("profiles")
+          .update({ 
+            ip_signup: clientIP,
+            ip_last_login: clientIP,
+            last_login: new Date().toISOString(),
+            login_count: 1
+          })
+          .eq("id", data.user.id);
+
+        // Log inscription avec détails complets incluant l'IP
         const now = new Date();
         await supabase.from("logs").insert({
           user_id: data.user.id,
@@ -271,6 +285,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           metadata: { 
             email, 
             username,
+            ip: clientIP,
             date: now.toLocaleDateString('fr-FR'),
             time: now.toLocaleTimeString('fr-FR')
           },

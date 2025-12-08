@@ -21,6 +21,7 @@ interface UserWithRole {
   created_at: string;
   last_login: string | null;
   ip_last_login: string | null;
+  ip_signup: string | null;
   role: AppRole;
 }
 
@@ -60,6 +61,7 @@ export const UsersManager = () => {
           created_at: profile.created_at,
           last_login: profile.last_login,
           ip_last_login: profile.ip_last_login,
+          ip_signup: (profile as any).ip_signup || null,
           role: userRole?.role || "client",
         };
       });
@@ -216,8 +218,10 @@ export const UsersManager = () => {
   };
 
   const handleBanUserIp = (user: UserWithRole) => {
-    if (user.ip_last_login) {
-      setIpToBan(user.ip_last_login);
+    // Utiliser l'IP de connexion en priorité, sinon l'IP d'inscription
+    const ipToUse = user.ip_last_login || user.ip_signup;
+    if (ipToUse) {
+      setIpToBan(ipToUse);
       setBanIpDialogOpen(true);
     } else {
       toast.error("Aucune IP connue pour cet utilisateur");
@@ -295,11 +299,27 @@ export const UsersManager = () => {
                   <p className="text-xs text-muted-foreground">
                     Dernière connexion: {user.last_login ? new Date(user.last_login).toLocaleString("fr-FR") : "Jamais"}
                   </p>
-                  {user.ip_last_login && (
-                    <p className="text-xs text-muted-foreground flex items-center gap-1">
-                      <Globe className="h-3 w-3" />
-                      IP: {user.ip_last_login}
-                    </p>
+                  {(user.ip_last_login || user.ip_signup) && (
+                    <div className="text-xs text-muted-foreground space-y-0.5">
+                      {user.ip_signup && (
+                        <p className="flex items-center gap-1">
+                          <Globe className="h-3 w-3" />
+                          IP inscription: {user.ip_signup}
+                        </p>
+                      )}
+                      {user.ip_last_login && user.ip_last_login !== user.ip_signup && (
+                        <p className="flex items-center gap-1">
+                          <Globe className="h-3 w-3" />
+                          IP dernière connexion: {user.ip_last_login}
+                        </p>
+                      )}
+                      {user.ip_last_login && user.ip_last_login === user.ip_signup && !user.ip_signup && (
+                        <p className="flex items-center gap-1">
+                          <Globe className="h-3 w-3" />
+                          IP: {user.ip_last_login}
+                        </p>
+                      )}
+                    </div>
                   )}
                 </div>
                 
@@ -329,7 +349,7 @@ export const UsersManager = () => {
                       </>
                     )}
                   </Button>
-                  {user.ip_last_login && (
+                  {(user.ip_last_login || user.ip_signup) && (
                     <Button
                       variant="outline"
                       size="sm"
