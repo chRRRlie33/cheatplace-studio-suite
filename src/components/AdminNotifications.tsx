@@ -8,6 +8,7 @@ interface Notification {
   type: string;
   username: string;
   timestamp: string;
+  message: string;
 }
 
 export const AdminNotifications = () => {
@@ -55,8 +56,8 @@ export const AdminNotifications = () => {
     console.log('📡 CRÉATION DE LA SUBSCRIPTION...');
     console.log('   → Channel name: admin-notifications');
     console.log('   → Table: logs');
-    console.log('   → Events: INSERT');
-    console.log('   → Filter: action_type in (login, logout, signup)');
+    console.log('   → Events: INSERT (TOUTES LES ACTIONS)');
+    console.log('   → Aucun filtre - écoute TOUT');
 
     const channel = supabase
       .channel('admin-notifications')
@@ -65,8 +66,8 @@ export const AdminNotifications = () => {
         {
           event: 'INSERT',
           schema: 'public',
-          table: 'logs',
-          filter: 'action_type=in.(login,logout,signup)'
+          table: 'logs'
+          // ✅ PLUS DE FILTRE - écoute TOUTES les insertions
         },
         (payload) => {
           console.log('');
@@ -77,15 +78,22 @@ export const AdminNotifications = () => {
           const log = payload.new as any;
           console.log('   → Log ID:', log.id);
           console.log('   → Action type:', log.action_type);
+          console.log('   → Message:', log.message);
           console.log('   → Metadata:', log.metadata);
           console.log('   → Created at:', log.created_at);
           
           const metadata = log.metadata || {};
           
+          // Labels pour tous les types d'actions
           const typeLabels: Record<string, string> = {
-            'login': 'CONNEXION',
-            'logout': 'DÉCONNEXION',
-            'signup': 'INSCRIPTION'
+            'login': '🔓 CONNEXION',
+            'logout': '🔒 DÉCONNEXION',
+            'signup': '✨ INSCRIPTION',
+            'download': '📥 TÉLÉCHARGEMENT',
+            'upload': '📤 UPLOAD',
+            'delete': '🗑️ SUPPRESSION',
+            'update': '✏️ MODIFICATION',
+            'create': '➕ CRÉATION'
           };
 
           const date = new Date(log.created_at);
@@ -96,14 +104,16 @@ export const AdminNotifications = () => {
           });
           const formattedTime = date.toLocaleTimeString('fr-FR', {
             hour: '2-digit',
-            minute: '2-digit'
+            minute: '2-digit',
+            second: '2-digit'
           });
 
           const notification: Notification = {
             id: log.id,
-            type: typeLabels[log.action_type] || log.action_type.toUpperCase(),
-            username: metadata.username || 'Utilisateur inconnu',
-            timestamp: `${formattedDate} ${formattedTime}`
+            type: typeLabels[log.action_type] || `📋 ${log.action_type.toUpperCase()}`,
+            username: metadata.username || metadata.email || 'Utilisateur inconnu',
+            timestamp: `${formattedDate} ${formattedTime}`,
+            message: log.message || ''
           };
 
           console.log('📦 Notification créée:', notification);
@@ -115,12 +125,12 @@ export const AdminNotifications = () => {
             return newList;
           });
 
-          // Auto-remove après 10 secondes
-          console.log('⏱️ Timer de suppression démarré (10s)');
+          // Auto-remove après 15 secondes (augmenté pour avoir le temps de lire)
+          console.log('⏱️ Timer de suppression démarré (15s)');
           setTimeout(() => {
             console.log('🗑️ Suppression auto de la notification:', notification.id);
             setNotifications(prev => prev.filter(n => n.id !== notification.id));
-          }, 10000);
+          }, 15000);
         }
       )
       .subscribe((status) => {
@@ -130,8 +140,8 @@ export const AdminNotifications = () => {
         
         if (status === 'SUBSCRIBED') {
           console.log('✅✅✅ SUBSCRIPTION ACTIVE ET FONCTIONNELLE ✅✅✅');
-          console.log('   → Le composant écoute maintenant les changements');
-          console.log('   → Faites un login/logout pour tester !');
+          console.log('   → Le composant écoute maintenant TOUS les changements');
+          console.log('   → Toutes les actions seront notifiées !');
         } else if (status === 'CHANNEL_ERROR') {
           console.error('❌ ERREUR DE CHANNEL');
         } else if (status === 'TIMED_OUT') {
@@ -181,22 +191,29 @@ export const AdminNotifications = () => {
   console.log('🎨 RENDER: Affichage de', notifications.length, 'notification(s)');
 
   return (
-    <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 flex flex-col gap-2 max-w-lg w-full px-4">
+    <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 flex flex-col gap-2 max-w-2xl w-full px-4">
       {notifications.map((notification) => (
         <div
           key={notification.id}
-          className="bg-primary/90 backdrop-blur-sm text-primary-foreground px-4 py-3 rounded-lg shadow-lg flex items-center justify-between gap-4 animate-in slide-in-from-top-2 duration-300"
+          className="bg-primary/90 backdrop-blur-sm text-primary-foreground px-4 py-3 rounded-lg shadow-lg flex items-start justify-between gap-4 animate-in slide-in-from-top-2 duration-300"
         >
-          <div className="flex items-center gap-2 text-sm font-medium">
-            <span className="font-bold">{notification.type}</span>
-            <span>—</span>
-            <span>{notification.username}</span>
-            <span>—</span>
-            <span className="text-primary-foreground/80">{notification.timestamp}</span>
+          <div className="flex-1 space-y-1">
+            <div className="flex items-center gap-2 text-sm font-medium flex-wrap">
+              <span className="font-bold">{notification.type}</span>
+              <span>—</span>
+              <span>{notification.username}</span>
+              <span>—</span>
+              <span className="text-primary-foreground/80">{notification.timestamp}</span>
+            </div>
+            {notification.message && (
+              <div className="text-xs text-primary-foreground/70 mt-1">
+                {notification.message}
+              </div>
+            )}
           </div>
           <button
             onClick={() => removeNotification(notification.id)}
-            className="text-primary-foreground/70 hover:text-primary-foreground transition-colors"
+            className="text-primary-foreground/70 hover:text-primary-foreground transition-colors flex-shrink-0"
             aria-label="Fermer la notification"
           >
             <X className="h-4 w-4" />
