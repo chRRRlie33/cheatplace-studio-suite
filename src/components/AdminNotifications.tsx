@@ -11,27 +11,53 @@ interface Notification {
 }
 
 export const AdminNotifications = () => {
-  const { role, loading } = useAuth(); // Ajoute "loading" si disponible dans ton hook
+  const { role, loading } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
+  // 🧪 LOG 1 : Surveille les changements de role et loading
   useEffect(() => {
-    console.log('🔍 Debug - Role:', role, 'Loading:', loading, 'Type:', typeof role);
+    console.log('═══════════════════════════════════════');
+    console.log('🔍 ADMIN NOTIFICATIONS - État actuel:');
+    console.log('   Role:', role);
+    console.log('   Type du role:', typeof role);
+    console.log('   Loading:', loading);
+    console.log('   Notifications count:', notifications.length);
+    console.log('═══════════════════════════════════════');
+  }, [role, loading, notifications.length]);
 
-    // Attendre que le rôle soit chargé
+  // 🧪 LOG 2 : Logique principale avec logs détaillés
+  useEffect(() => {
+    console.log('');
+    console.log('🚀 DÉMARRAGE useEffect principal');
+    console.log('   → Role reçu:', role);
+    console.log('   → Loading:', loading);
+
+    // Vérification 1 : Loading
     if (loading) {
-      console.log('⏳ En attente du chargement du rôle...');
+      console.log('⏳ EN ATTENTE - Le rôle est en cours de chargement...');
+      console.log('   → Arrêt de l\'exécution');
       return;
     }
+    console.log('✓ Loading terminé');
 
-    // Vérifier si c'est un admin
+    // Vérification 2 : Role admin
     if (role !== 'admin') {
-      console.log('❌ Pas admin, rôle actuel:', role);
+      console.log('❌ ACCÈS REFUSÉ - Rôle actuel:', role);
+      console.log('   → Rôle requis: "admin"');
+      console.log('   → Comparaison:', `"${role}" !== "admin"`);
+      console.log('   → Arrêt de l\'exécution');
       return;
     }
+    console.log('✅ ACCÈS AUTORISÉ - Utilisateur admin confirmé');
 
-    console.log('✅ Utilisateur admin détecté, activation de la subscription');
+    // Création du channel
+    console.log('');
+    console.log('📡 CRÉATION DE LA SUBSCRIPTION...');
+    console.log('   → Channel name: admin-notifications');
+    console.log('   → Table: logs');
+    console.log('   → Events: INSERT');
+    console.log('   → Filter: action_type in (login, logout, signup)');
 
-    // Écouter les nouveaux logs en temps réel
     const channel = supabase
       .channel('admin-notifications')
       .on(
@@ -43,9 +69,17 @@ export const AdminNotifications = () => {
           filter: 'action_type=in.(login,logout,signup)'
         },
         (payload) => {
-          console.log('🔔 Notification reçue:', payload);
+          console.log('');
+          console.log('🎉🎉🎉 NOTIFICATION REÇUE ! 🎉🎉🎉');
+          console.log('   → Payload complet:', payload);
+          console.log('   → Payload.new:', payload.new);
           
           const log = payload.new as any;
+          console.log('   → Log ID:', log.id);
+          console.log('   → Action type:', log.action_type);
+          console.log('   → Metadata:', log.metadata);
+          console.log('   → Created at:', log.created_at);
+          
           const metadata = log.metadata || {};
           
           const typeLabels: Record<string, string> = {
@@ -72,10 +106,17 @@ export const AdminNotifications = () => {
             timestamp: `${formattedDate} ${formattedTime}`
           };
 
-          console.log('📬 Ajout notification:', notification);
-          setNotifications(prev => [notification, ...prev].slice(0, 10));
+          console.log('📦 Notification créée:', notification);
+          console.log('   → Ajout à la liste...');
+          
+          setNotifications(prev => {
+            const newList = [notification, ...prev].slice(0, 10);
+            console.log('   → Nouvelle liste (', newList.length, 'items):', newList);
+            return newList;
+          });
 
           // Auto-remove après 10 secondes
+          console.log('⏱️ Timer de suppression démarré (10s)');
           setTimeout(() => {
             console.log('🗑️ Suppression auto de la notification:', notification.id);
             setNotifications(prev => prev.filter(n => n.id !== notification.id));
@@ -83,36 +124,61 @@ export const AdminNotifications = () => {
         }
       )
       .subscribe((status) => {
-        console.log('📡 Status de la subscription:', status);
+        console.log('');
+        console.log('📊 CHANGEMENT DE STATUS DE LA SUBSCRIPTION');
+        console.log('   → Nouveau status:', status);
+        
+        if (status === 'SUBSCRIBED') {
+          console.log('✅✅✅ SUBSCRIPTION ACTIVE ET FONCTIONNELLE ✅✅✅');
+          console.log('   → Le composant écoute maintenant les changements');
+          console.log('   → Faites un login/logout pour tester !');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('❌ ERREUR DE CHANNEL');
+        } else if (status === 'TIMED_OUT') {
+          console.error('⏱️ TIMEOUT DE LA SUBSCRIPTION');
+        } else if (status === 'CLOSED') {
+          console.log('🔌 Channel fermé');
+        }
       });
 
+    // Cleanup
     return () => {
-      console.log('🔌 Déconnexion de la subscription admin');
+      console.log('');
+      console.log('🔌 NETTOYAGE - Fermeture de la subscription');
+      console.log('   → Suppression du channel admin-notifications');
       supabase.removeChannel(channel);
+      console.log('   ✓ Channel supprimé');
     };
-  }, [role, loading]); // Dépendances importantes
+  }, [role, loading]);
 
   const removeNotification = (id: string) => {
-    console.log('❌ Suppression manuelle notification:', id);
-    setNotifications(prev => prev.filter(n => n.id !== id));
+    console.log('');
+    console.log('🗑️ SUPPRESSION MANUELLE');
+    console.log('   → Notification ID:', id);
+    setNotifications(prev => {
+      const filtered = prev.filter(n => n.id !== id);
+      console.log('   → Notifications restantes:', filtered.length);
+      return filtered;
+    });
   };
 
+  // Render conditions avec logs
   if (loading) {
-    console.log('⏳ Composant en attente...');
+    console.log('🎨 RENDER: Composant masqué (loading en cours)');
     return null;
   }
 
   if (role !== 'admin') {
-    console.log('👁️ Composant masqué (non-admin)');
+    console.log('🎨 RENDER: Composant masqué (pas admin)');
     return null;
   }
 
   if (notifications.length === 0) {
-    console.log('📭 Aucune notification à afficher');
+    console.log('🎨 RENDER: Composant masqué (aucune notification)');
     return null;
   }
 
-  console.log('📬 Affichage de', notifications.length, 'notification(s)');
+  console.log('🎨 RENDER: Affichage de', notifications.length, 'notification(s)');
 
   return (
     <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 flex flex-col gap-2 max-w-lg w-full px-4">
@@ -131,6 +197,7 @@ export const AdminNotifications = () => {
           <button
             onClick={() => removeNotification(notification.id)}
             className="text-primary-foreground/70 hover:text-primary-foreground transition-colors"
+            aria-label="Fermer la notification"
           >
             <X className="h-4 w-4" />
           </button>
