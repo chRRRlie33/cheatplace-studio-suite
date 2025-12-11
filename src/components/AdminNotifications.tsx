@@ -11,11 +11,25 @@ interface Notification {
 }
 
 export const AdminNotifications = () => {
-  const { role } = useAuth();
+  const { role, loading } = useAuth(); // Ajoute "loading" si disponible dans ton hook
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
   useEffect(() => {
-    if (role !== 'admin') return;
+    console.log('🔍 Debug - Role:', role, 'Loading:', loading, 'Type:', typeof role);
+
+    // Attendre que le rôle soit chargé
+    if (loading) {
+      console.log('⏳ En attente du chargement du rôle...');
+      return;
+    }
+
+    // Vérifier si c'est un admin
+    if (role !== 'admin') {
+      console.log('❌ Pas admin, rôle actuel:', role);
+      return;
+    }
+
+    console.log('✅ Utilisateur admin détecté, activation de la subscription');
 
     // Écouter les nouveaux logs en temps réel
     const channel = supabase
@@ -29,6 +43,8 @@ export const AdminNotifications = () => {
           filter: 'action_type=in.(login,logout,signup)'
         },
         (payload) => {
+          console.log('🔔 Notification reçue:', payload);
+          
           const log = payload.new as any;
           const metadata = log.metadata || {};
           
@@ -56,28 +72,47 @@ export const AdminNotifications = () => {
             timestamp: `${formattedDate} ${formattedTime}`
           };
 
+          console.log('📬 Ajout notification:', notification);
           setNotifications(prev => [notification, ...prev].slice(0, 10));
 
           // Auto-remove après 10 secondes
           setTimeout(() => {
+            console.log('🗑️ Suppression auto de la notification:', notification.id);
             setNotifications(prev => prev.filter(n => n.id !== notification.id));
           }, 10000);
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('📡 Status de la subscription:', status);
+      });
 
     return () => {
+      console.log('🔌 Déconnexion de la subscription admin');
       supabase.removeChannel(channel);
     };
-  }, [role]);
+  }, [role, loading]); // Dépendances importantes
 
   const removeNotification = (id: string) => {
+    console.log('❌ Suppression manuelle notification:', id);
     setNotifications(prev => prev.filter(n => n.id !== id));
   };
 
-  if (role !== 'admin' || notifications.length === 0) {
+  if (loading) {
+    console.log('⏳ Composant en attente...');
     return null;
   }
+
+  if (role !== 'admin') {
+    console.log('👁️ Composant masqué (non-admin)');
+    return null;
+  }
+
+  if (notifications.length === 0) {
+    console.log('📭 Aucune notification à afficher');
+    return null;
+  }
+
+  console.log('📬 Affichage de', notifications.length, 'notification(s)');
 
   return (
     <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 flex flex-col gap-2 max-w-lg w-full px-4">
