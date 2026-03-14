@@ -51,7 +51,7 @@ const Dashboard = () => {
           </div>
 
           <Tabs defaultValue="stats" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-2 lg:grid-cols-5 gap-2">
+            <TabsList className="grid w-full grid-cols-3 lg:grid-cols-6 gap-2">
               <TabsTrigger value="stats" className="gap-2">
                 <LayoutDashboard className="h-4 w-4" />
                 <span className="hidden sm:inline">Stats</span>
@@ -59,6 +59,10 @@ const Dashboard = () => {
               <TabsTrigger value="offers" className="gap-2">
                 <Package className="h-4 w-4" />
                 <span className="hidden sm:inline">Offres</span>
+              </TabsTrigger>
+              <TabsTrigger value="keys" className="gap-2">
+                <Key className="h-4 w-4" />
+                <span className="hidden sm:inline">Keys</span>
               </TabsTrigger>
               <TabsTrigger value="announcements" className="gap-2">
                 <Megaphone className="h-4 w-4" />
