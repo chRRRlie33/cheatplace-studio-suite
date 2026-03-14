@@ -88,6 +88,10 @@ const Dashboard = () => {
               <OffersManager />
             </TabsContent>
 
+            <TabsContent value="keys">
+              <KeysManager />
+            </TabsContent>
+
             <TabsContent value="announcements">
               <AnnouncementsManager />
             </TabsContent>
