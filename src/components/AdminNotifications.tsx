@@ -1,24 +1,26 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 
+interface Notification {
+  id: string;
+  message: string;
+  timestamp: number;
+}
+
 export const AdminNotifications = () => {
   const { role } = useAuth();
-  const [events, setEvents] = useState<string[]>([]);
-  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+
+  const removeNotification = useCallback((id: string) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  }, []);
 
   useEffect(() => {
-    console.log('🔍 AdminNotifications - Role:', role);
-    
-    if (role !== 'admin') {
-      console.log('❌ Pas admin, arrêt');
-      return;
-    }
-
-    console.log('✅ Admin détecté, création subscription...');
+    if (role !== 'admin') return;
 
     const channel = supabase
-      .channel('test-notifs')
+      .channel('admin-notifs')
       .on(
         'postgres_changes',
         {
@@ -27,88 +29,53 @@ export const AdminNotifications = () => {
           table: 'logs'
         },
         (payload) => {
-          console.log('🎉 ÉVÉNEMENT REÇU !', payload);
           const log = payload.new as any;
-          const newEvent = `${log.action_type} - ${new Date().toLocaleTimeString()}`;
-          setEvents(prev => [newEvent, ...prev].slice(0, 5));
+          const actionMap: Record<string, string> = {
+            user_login: 'CONNEXION',
+            user_registered: 'INSCRIPTION',
+            user_logout: 'DÉCONNEXION',
+            download: 'TÉLÉCHARGEMENT',
+          };
+
+          const label = actionMap[log.action_type];
+          if (!label) return;
+
+          const meta = log.metadata as any;
+          const username = meta?.username || 'Utilisateur';
+          const now = new Date();
+          const date = now.toLocaleDateString('fr-FR');
+          const time = now.toLocaleTimeString('fr-FR');
+
+          const id = `${Date.now()}-${Math.random()}`;
+          const message = `${label} — ${username} — ${date} ${time}`;
+
+          setNotifications(prev => [{ id, message, timestamp: Date.now() }, ...prev].slice(0, 5));
+
+          // Auto-remove after 5 seconds
+          setTimeout(() => {
+            removeNotification(id);
+          }, 5000);
         }
       )
-      .subscribe((status) => {
-        console.log('📡 Status subscription:', status);
-        if (status === 'SUBSCRIBED') {
-          console.log('✅ SUBSCRIBED !');
-          setIsSubscribed(true);
-        }
-      });
+      .subscribe();
 
     return () => {
-      console.log('🔌 Cleanup subscription');
       supabase.removeChannel(channel);
     };
-  }, [role]);
+  }, [role, removeNotification]);
 
-  // ⚠️ TOUJOURS AFFICHER si admin (même sans événements)
-  if (role !== 'admin') return null;
+  if (role !== 'admin' || notifications.length === 0) return null;
 
   return (
-    <div 
-      className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] w-[500px]"
-      style={{ 
-        zIndex: 9999,
-        backgroundColor: 'rgba(0, 0, 0, 0.9)',
-        color: 'white',
-        padding: '20px',
-        borderRadius: '10px',
-        border: '2px solid lime'
-      }}
-    >
-      <div style={{ marginBottom: '10px', fontWeight: 'bold', fontSize: '18px' }}>
-        🔔 Admin Notifications
-      </div>
-      
-      <div style={{ marginBottom: '10px', fontSize: '14px' }}>
-        Status: {isSubscribed ? '✅ Connecté' : '⏳ En attente...'}
-      </div>
-
-      <div style={{ marginBottom: '10px', fontSize: '14px' }}>
-        Événements reçus: {events.length}
-      </div>
-
-      {events.length === 0 ? (
-        <div style={{ 
-          backgroundColor: 'rgba(255, 255, 0, 0.2)',
-          padding: '10px',
-          borderRadius: '5px',
-          fontSize: '12px'
-        }}>
-          ⚠️ Aucun événement reçu. Faites une connexion/déconnexion pour tester.
+    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] flex flex-col gap-2 w-auto max-w-[90vw]">
+      {notifications.map((notif) => (
+        <div
+          key={notif.id}
+          className="bg-background/95 border border-primary/50 text-foreground px-5 py-3 rounded-lg shadow-lg backdrop-blur-sm animate-slide-up text-sm font-medium whitespace-nowrap"
+        >
+          🔔 {notif.message}
         </div>
-      ) : (
-        <div style={{ 
-          backgroundColor: 'rgba(0, 255, 0, 0.2)',
-          padding: '10px',
-          borderRadius: '5px'
-        }}>
-          {events.map((evt, i) => (
-            <div key={i} style={{ 
-              fontSize: '12px',
-              marginBottom: '5px',
-              borderBottom: '1px solid rgba(255,255,255,0.2)',
-              paddingBottom: '5px'
-            }}>
-              {evt}
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div style={{ 
-        marginTop: '15px',
-        fontSize: '11px',
-        color: 'rgba(255,255,255,0.6)'
-      }}>
-        💡 Ouvrez la console (F12) pour voir les logs détaillés
-      </div>
+      ))}
     </div>
   );
 };
