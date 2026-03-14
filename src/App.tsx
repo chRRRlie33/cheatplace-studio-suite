@@ -11,8 +11,6 @@ import UserStats from "./pages/UserStats";
 import NotFound from "./pages/NotFound";
 import { AdminNotifications } from "@/components/AdminNotifications";
 import { RealtimeDebug } from "@/components/RealtimeDebug";
-<AdminNotifications />
-<RealtimeDebug />
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
