@@ -9,6 +9,7 @@ import { OffersManager } from "@/components/dashboard/OffersManager";
 import { AnnouncementsManager } from "@/components/dashboard/AnnouncementsManager";
 import { UsersManager } from "@/components/dashboard/UsersManager";
 import { LogsViewer } from "@/components/dashboard/LogsViewer";
+import { KeysManager } from "@/components/dashboard/KeysManager";
 
 const Dashboard = () => {
   const { user, role, loading } = useAuth();
