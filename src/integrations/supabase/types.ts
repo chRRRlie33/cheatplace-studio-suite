@@ -167,6 +167,44 @@ export type Database = {
           },
         ]
       }
+      offer_keys: {
+        Row: {
+          created_at: string
+          id: string
+          key_value: string
+          offer_id: string
+          used: boolean
+          used_at: string | null
+          used_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          key_value: string
+          offer_id: string
+          used?: boolean
+          used_at?: string | null
+          used_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          key_value?: string
+          offer_id?: string
+          used?: boolean
+          used_at?: string | null
+          used_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "offer_keys_offer_id_fkey"
+            columns: ["offer_id"]
+            isOneToOne: false
+            referencedRelation: "offers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       offers: {
         Row: {
           created_at: string
@@ -401,6 +439,10 @@ export type Database = {
       increment_offer_download: {
         Args: { _offer_id: string }
         Returns: undefined
+      }
+      redeem_offer_key: {
+        Args: { _key_value: string; _offer_id: string; _user_id: string }
+        Returns: boolean
       }
     }
     Enums: {
