@@ -3,8 +3,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Download, Eye, Package, Play, Image as ImageIcon, ChevronLeft, ChevronRight } from "lucide-react";
+import { Download, Eye, Package, Play, Image as ImageIcon, ChevronLeft, ChevronRight, Key } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
