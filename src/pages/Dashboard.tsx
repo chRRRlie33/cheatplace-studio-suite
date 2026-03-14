@@ -3,12 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { Navbar } from "@/components/Navbar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LayoutDashboard, Package, Megaphone, Users, Activity, Shield } from "lucide-react";
+import { LayoutDashboard, Package, Megaphone, Users, Activity, Shield, Key } from "lucide-react";
 import { StatsOverview } from "@/components/dashboard/StatsOverview";
 import { OffersManager } from "@/components/dashboard/OffersManager";
 import { AnnouncementsManager } from "@/components/dashboard/AnnouncementsManager";
 import { UsersManager } from "@/components/dashboard/UsersManager";
 import { LogsViewer } from "@/components/dashboard/LogsViewer";
+import { KeysManager } from "@/components/dashboard/KeysManager";
 
 const Dashboard = () => {
   const { user, role, loading } = useAuth();
@@ -50,7 +51,7 @@ const Dashboard = () => {
           </div>
 
           <Tabs defaultValue="stats" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-2 lg:grid-cols-5 gap-2">
+            <TabsList className="grid w-full grid-cols-3 lg:grid-cols-6 gap-2">
               <TabsTrigger value="stats" className="gap-2">
                 <LayoutDashboard className="h-4 w-4" />
                 <span className="hidden sm:inline">Stats</span>
@@ -58,6 +59,10 @@ const Dashboard = () => {
               <TabsTrigger value="offers" className="gap-2">
                 <Package className="h-4 w-4" />
                 <span className="hidden sm:inline">Offres</span>
+              </TabsTrigger>
+              <TabsTrigger value="keys" className="gap-2">
+                <Key className="h-4 w-4" />
+                <span className="hidden sm:inline">Keys</span>
               </TabsTrigger>
               <TabsTrigger value="announcements" className="gap-2">
                 <Megaphone className="h-4 w-4" />
@@ -81,6 +86,10 @@ const Dashboard = () => {
 
             <TabsContent value="offers">
               <OffersManager />
+            </TabsContent>
+
+            <TabsContent value="keys">
+              <KeysManager />
             </TabsContent>
 
             <TabsContent value="announcements">

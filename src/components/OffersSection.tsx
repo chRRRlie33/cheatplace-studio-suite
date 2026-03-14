@@ -3,8 +3,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Download, Eye, Package, Play, Image as ImageIcon, ChevronLeft, ChevronRight } from "lucide-react";
+import { Download, Eye, Package, Play, Image as ImageIcon, ChevronLeft, ChevronRight, Key } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -17,18 +19,78 @@ export const OffersSection = () => {
   const [selectedOffer, setSelectedOffer] = useState<any>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [currentMediaIndex, setCurrentMediaIndex] = useState(0);
+  const [keyDialogOffer, setKeyDialogOffer] = useState<any>(null);
+  const [keyInput, setKeyInput] = useState("");
+  const [validatingKey, setValidatingKey] = useState(false);
   const queryClient = useQueryClient();
 
-  const handleDownload = async (offer: any) => {
+  const checkOfferHasKeys = async (offerId: string): Promise<boolean> => {
+    const { count, error } = await supabase
+      .from("offer_keys")
+      .select("id", { count: "exact", head: true })
+      .eq("offer_id", offerId)
+      .eq("used", false);
+    if (error) return false;
+    return (count || 0) > 0;
+  };
+
+  const handleDownloadClick = async (offer: any) => {
     if (!offer.file_url) {
       toast.error("Aucun fichier disponible pour cette offre");
       return;
     }
 
+    // Check if offer has keys
+    const hasKeys = await checkOfferHasKeys(offer.id);
+    if (hasKeys) {
+      setKeyDialogOffer(offer);
+      setKeyInput("");
+      return;
+    }
+
+    // No keys required, download directly
+    await performDownload(offer);
+  };
+
+  const handleKeySubmit = async () => {
+    if (!keyDialogOffer || !keyInput.trim()) return;
+
+    setValidatingKey(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast.error("Vous devez être connecté pour télécharger");
+        return;
+      }
+
+      const { data: result, error } = await supabase.rpc("redeem_offer_key", {
+        _offer_id: keyDialogOffer.id,
+        _key_value: keyInput.trim(),
+        _user_id: user.id,
+      });
+
+      if (error || !result) {
+        toast.error("Key invalide ou déjà utilisée");
+        return;
+      }
+
+      toast.success("Key validée !");
+      setKeyDialogOffer(null);
+      setKeyInput("");
+      await performDownload(keyDialogOffer);
+    } catch {
+      toast.error("Erreur lors de la validation de la key");
+    } finally {
+      setValidatingKey(false);
+    }
+  };
+
+  const performDownload = async (offer: any) => {
+    if (!offer.file_url) return;
+
     try {
       setDownloadingId(offer.id);
 
-      // Incrémenter le compteur de téléchargements via la fonction sécurisée
       const { error: updateError } = await supabase
         .rpc('increment_offer_download', { _offer_id: offer.id });
 
@@ -36,10 +98,8 @@ export const OffersSection = () => {
         console.error("Error updating download count:", updateError);
       }
       
-      // Enregistrer le téléchargement pour l'utilisateur connecté
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        // Récupérer le profil utilisateur
         const { data: profileData } = await supabase
           .from("profiles")
           .select("username")
@@ -53,7 +113,6 @@ export const OffersSection = () => {
             offer_id: offer.id
           });
 
-        // Log du téléchargement avec détails
         const now = new Date();
         await supabase.from("logs").insert({
           user_id: user.id,
@@ -69,13 +128,11 @@ export const OffersSection = () => {
         });
       }
 
-      // Construire une URL de téléchargement forcé via le paramètre `download`
       const hasQuery = offer.file_url.includes("?");
       const fileExtension = offer.file_format ? `.${offer.file_format}` : "";
       const downloadFileName = `${offer.title}${fileExtension}`;
       const downloadUrl = `${offer.file_url}${hasQuery ? "&" : "?"}download=${encodeURIComponent(downloadFileName)}`;
 
-      // Télécharger le fichier
       const link = document.createElement("a");
       link.href = downloadUrl;
       link.download = downloadFileName;
@@ -83,7 +140,6 @@ export const OffersSection = () => {
       link.click();
       document.body.removeChild(link);
 
-      // Ouvrir le lien Discord via une balise <a> pour éviter le blocage popup
       const discordLink = document.createElement("a");
       discordLink.href = "https://discord.gg/brmNnnDS";
       discordLink.target = "_blank";
@@ -92,9 +148,7 @@ export const OffersSection = () => {
       discordLink.click();
       document.body.removeChild(discordLink);
 
-      // Rafraîchir les données pour afficher le nouveau compteur
       queryClient.invalidateQueries({ queryKey: ["offers"] });
-
       toast.success("Téléchargement démarré");
     } catch (error) {
       console.error("Download error:", error);
@@ -271,7 +325,7 @@ export const OffersSection = () => {
                     <Button 
                       variant="secondary"
                       size="sm"
-                      onClick={() => handleDownload(offer)}
+                      onClick={() => handleDownloadClick(offer)}
                       disabled={downloadingId === offer.id}
                     >
                       <Download className="h-4 w-4 mr-2" />
@@ -419,7 +473,7 @@ export const OffersSection = () => {
               <Button 
                 className="w-full bg-gradient-button shadow-glow-cyan"
                 onClick={() => {
-                  handleDownload(selectedOffer);
+                  handleDownloadClick(selectedOffer);
                   setSelectedOffer(null);
                 }}
                 disabled={downloadingId === selectedOffer?.id}
@@ -428,6 +482,40 @@ export const OffersSection = () => {
                 {downloadingId === selectedOffer?.id ? "Téléchargement..." : "Télécharger"}
               </Button>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog pour entrer une key */}
+      <Dialog open={!!keyDialogOffer} onOpenChange={() => { setKeyDialogOffer(null); setKeyInput(""); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Key className="h-5 w-5" />
+              Entrez votre key
+            </DialogTitle>
+            <DialogDescription>
+              Une key est requise pour télécharger "{keyDialogOffer?.title}"
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="download-key">Key de téléchargement</Label>
+              <Input
+                id="download-key"
+                value={keyInput}
+                onChange={(e) => setKeyInput(e.target.value)}
+                placeholder="KEY-XXXX-XXXX-XXXX"
+                onKeyDown={(e) => e.key === "Enter" && handleKeySubmit()}
+              />
+            </div>
+            <Button
+              onClick={handleKeySubmit}
+              className="w-full bg-gradient-button shadow-glow-cyan"
+              disabled={validatingKey || !keyInput.trim()}
+            >
+              {validatingKey ? "Vérification..." : "Valider et télécharger"}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
