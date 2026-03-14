@@ -473,7 +473,7 @@ export const OffersSection = () => {
               <Button 
                 className="w-full bg-gradient-button shadow-glow-cyan"
                 onClick={() => {
-                  handleDownload(selectedOffer);
+                  handleDownloadClick(selectedOffer);
                   setSelectedOffer(null);
                 }}
                 disabled={downloadingId === selectedOffer?.id}
