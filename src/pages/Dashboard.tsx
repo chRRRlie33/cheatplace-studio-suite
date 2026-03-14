@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { Navbar } from "@/components/Navbar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LayoutDashboard, Package, Megaphone, Users, Activity, Shield } from "lucide-react";
+import { LayoutDashboard, Package, Megaphone, Users, Activity, Shield, Key } from "lucide-react";
 import { StatsOverview } from "@/components/dashboard/StatsOverview";
 import { OffersManager } from "@/components/dashboard/OffersManager";
 import { AnnouncementsManager } from "@/components/dashboard/AnnouncementsManager";
