@@ -325,7 +325,7 @@ export const OffersSection = () => {
                     <Button 
                       variant="secondary"
                       size="sm"
-                      onClick={() => handleDownload(offer)}
+                      onClick={() => handleDownloadClick(offer)}
                       disabled={downloadingId === offer.id}
                     >
                       <Download className="h-4 w-4 mr-2" />
