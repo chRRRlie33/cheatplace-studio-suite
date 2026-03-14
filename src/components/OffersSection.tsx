@@ -485,6 +485,40 @@ export const OffersSection = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Dialog pour entrer une key */}
+      <Dialog open={!!keyDialogOffer} onOpenChange={() => { setKeyDialogOffer(null); setKeyInput(""); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Key className="h-5 w-5" />
+              Entrez votre key
+            </DialogTitle>
+            <DialogDescription>
+              Une key est requise pour télécharger "{keyDialogOffer?.title}"
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="download-key">Key de téléchargement</Label>
+              <Input
+                id="download-key"
+                value={keyInput}
+                onChange={(e) => setKeyInput(e.target.value)}
+                placeholder="KEY-XXXX-XXXX-XXXX"
+                onKeyDown={(e) => e.key === "Enter" && handleKeySubmit()}
+              />
+            </div>
+            <Button
+              onClick={handleKeySubmit}
+              className="w-full bg-gradient-button shadow-glow-cyan"
+              disabled={validatingKey || !keyInput.trim()}
+            >
+              {validatingKey ? "Vérification..." : "Valider et télécharger"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 };
