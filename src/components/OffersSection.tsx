@@ -24,16 +24,73 @@ export const OffersSection = () => {
   const [validatingKey, setValidatingKey] = useState(false);
   const queryClient = useQueryClient();
 
-  const handleDownload = async (offer: any) => {
+  const checkOfferHasKeys = async (offerId: string): Promise<boolean> => {
+    const { count, error } = await supabase
+      .from("offer_keys")
+      .select("id", { count: "exact", head: true })
+      .eq("offer_id", offerId)
+      .eq("used", false);
+    if (error) return false;
+    return (count || 0) > 0;
+  };
+
+  const handleDownloadClick = async (offer: any) => {
     if (!offer.file_url) {
       toast.error("Aucun fichier disponible pour cette offre");
       return;
     }
 
+    // Check if offer has keys
+    const hasKeys = await checkOfferHasKeys(offer.id);
+    if (hasKeys) {
+      setKeyDialogOffer(offer);
+      setKeyInput("");
+      return;
+    }
+
+    // No keys required, download directly
+    await performDownload(offer);
+  };
+
+  const handleKeySubmit = async () => {
+    if (!keyDialogOffer || !keyInput.trim()) return;
+
+    setValidatingKey(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast.error("Vous devez être connecté pour télécharger");
+        return;
+      }
+
+      const { data: result, error } = await supabase.rpc("redeem_offer_key", {
+        _offer_id: keyDialogOffer.id,
+        _key_value: keyInput.trim(),
+        _user_id: user.id,
+      });
+
+      if (error || !result) {
+        toast.error("Key invalide ou déjà utilisée");
+        return;
+      }
+
+      toast.success("Key validée !");
+      setKeyDialogOffer(null);
+      setKeyInput("");
+      await performDownload(keyDialogOffer);
+    } catch {
+      toast.error("Erreur lors de la validation de la key");
+    } finally {
+      setValidatingKey(false);
+    }
+  };
+
+  const performDownload = async (offer: any) => {
+    if (!offer.file_url) return;
+
     try {
       setDownloadingId(offer.id);
 
-      // Incrémenter le compteur de téléchargements via la fonction sécurisée
       const { error: updateError } = await supabase
         .rpc('increment_offer_download', { _offer_id: offer.id });
 
@@ -41,10 +98,8 @@ export const OffersSection = () => {
         console.error("Error updating download count:", updateError);
       }
       
-      // Enregistrer le téléchargement pour l'utilisateur connecté
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        // Récupérer le profil utilisateur
         const { data: profileData } = await supabase
           .from("profiles")
           .select("username")
@@ -58,7 +113,6 @@ export const OffersSection = () => {
             offer_id: offer.id
           });
 
-        // Log du téléchargement avec détails
         const now = new Date();
         await supabase.from("logs").insert({
           user_id: user.id,
@@ -74,13 +128,11 @@ export const OffersSection = () => {
         });
       }
 
-      // Construire une URL de téléchargement forcé via le paramètre `download`
       const hasQuery = offer.file_url.includes("?");
       const fileExtension = offer.file_format ? `.${offer.file_format}` : "";
       const downloadFileName = `${offer.title}${fileExtension}`;
       const downloadUrl = `${offer.file_url}${hasQuery ? "&" : "?"}download=${encodeURIComponent(downloadFileName)}`;
 
-      // Télécharger le fichier
       const link = document.createElement("a");
       link.href = downloadUrl;
       link.download = downloadFileName;
@@ -88,7 +140,6 @@ export const OffersSection = () => {
       link.click();
       document.body.removeChild(link);
 
-      // Ouvrir le lien Discord via une balise <a> pour éviter le blocage popup
       const discordLink = document.createElement("a");
       discordLink.href = "https://discord.gg/brmNnnDS";
       discordLink.target = "_blank";
@@ -97,9 +148,7 @@ export const OffersSection = () => {
       discordLink.click();
       document.body.removeChild(discordLink);
 
-      // Rafraîchir les données pour afficher le nouveau compteur
       queryClient.invalidateQueries({ queryKey: ["offers"] });
-
       toast.success("Téléchargement démarré");
     } catch (error) {
       console.error("Download error:", error);
