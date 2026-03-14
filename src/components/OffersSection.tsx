@@ -19,6 +19,9 @@ export const OffersSection = () => {
   const [selectedOffer, setSelectedOffer] = useState<any>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [currentMediaIndex, setCurrentMediaIndex] = useState(0);
+  const [keyDialogOffer, setKeyDialogOffer] = useState<any>(null);
+  const [keyInput, setKeyInput] = useState("");
+  const [validatingKey, setValidatingKey] = useState(false);
   const queryClient = useQueryClient();
 
   const handleDownload = async (offer: any) => {
