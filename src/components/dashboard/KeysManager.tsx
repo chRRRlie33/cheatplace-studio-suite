@@ -20,6 +20,7 @@ export const KeysManager = () => {
   const [maxUses, setMaxUses] = useState("1");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
 
   const { data: offers } = useQuery({
     queryKey: ["all-offers-for-keys"],
