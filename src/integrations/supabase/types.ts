@@ -172,7 +172,9 @@ export type Database = {
           created_at: string
           id: string
           key_value: string
+          max_uses: number
           offer_id: string
+          use_count: number
           used: boolean
           used_at: string | null
           used_by: string | null
@@ -181,7 +183,9 @@ export type Database = {
           created_at?: string
           id?: string
           key_value: string
+          max_uses?: number
           offer_id: string
+          use_count?: number
           used?: boolean
           used_at?: string | null
           used_by?: string | null
@@ -190,7 +194,9 @@ export type Database = {
           created_at?: string
           id?: string
           key_value?: string
+          max_uses?: number
           offer_id?: string
+          use_count?: number
           used?: boolean
           used_at?: string | null
           used_by?: string | null

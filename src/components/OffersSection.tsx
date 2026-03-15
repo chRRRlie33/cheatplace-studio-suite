@@ -24,14 +24,19 @@ export const OffersSection = () => {
   const [validatingKey, setValidatingKey] = useState(false);
   const queryClient = useQueryClient();
 
-  const checkOfferHasKeys = async (offerId: string): Promise<boolean> => {
-    const { count, error } = await supabase
+  const checkOfferKeys = async (offerId: string): Promise<{ total: number; available: number }> => {
+    const { count: total } = await supabase
+      .from("offer_keys")
+      .select("id", { count: "exact", head: true })
+      .eq("offer_id", offerId);
+
+    const { count: available } = await supabase
       .from("offer_keys")
       .select("id", { count: "exact", head: true })
       .eq("offer_id", offerId)
       .eq("used", false);
-    if (error) return false;
-    return (count || 0) > 0;
+
+    return { total: total || 0, available: available || 0 };
   };
 
   const handleDownloadClick = async (offer: any) => {
@@ -40,16 +45,21 @@ export const OffersSection = () => {
       return;
     }
 
-    // Check if offer has keys
-    const hasKeys = await checkOfferHasKeys(offer.id);
-    if (hasKeys) {
+    const { total, available } = await checkOfferKeys(offer.id);
+
+    // If keys exist for this offer, require one
+    if (total > 0) {
+      if (available === 0) {
+        toast.error("Aucune key disponible pour cette offre. Téléchargement impossible.");
+        return;
+      }
       setKeyDialogOffer(offer);
       setKeyInput("");
       return;
     }
 
-    // No keys required, download directly
-    await performDownload(offer);
+    // No keys associated at all = block download
+    toast.error("Aucune key associée à cette offre. Téléchargement impossible.");
   };
 
   const handleKeySubmit = async () => {

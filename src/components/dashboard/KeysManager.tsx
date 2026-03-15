@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -16,6 +16,7 @@ export const KeysManager = () => {
   const queryClient = useQueryClient();
   const [selectedOfferId, setSelectedOfferId] = useState<string>("");
   const [newKeys, setNewKeys] = useState("");
+  const [maxUses, setMaxUses] = useState("1");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -47,7 +48,7 @@ export const KeysManager = () => {
   });
 
   const addKeysMutation = useMutation({
-    mutationFn: async ({ offerId, keysText }: { offerId: string; keysText: string }) => {
+    mutationFn: async ({ offerId, keysText, maxUsesVal }: { offerId: string; keysText: string; maxUsesVal: number }) => {
       const keysList = keysText
         .split("\n")
         .map(k => k.trim())
@@ -58,6 +59,9 @@ export const KeysManager = () => {
       const rows = keysList.map(key_value => ({
         offer_id: offerId,
         key_value,
+        max_uses: maxUsesVal,
+        use_count: 0,
+        used: false,
       }));
 
       const { error } = await supabase.from("offer_keys").insert(rows);
@@ -69,6 +73,7 @@ export const KeysManager = () => {
       queryClient.invalidateQueries({ queryKey: ["offer-keys"] });
       toast.success(`${count} key(s) ajoutée(s) !`);
       setNewKeys("");
+      setMaxUses("1");
       setIsDialogOpen(false);
     },
     onError: (error: any) => {
@@ -99,7 +104,12 @@ export const KeysManager = () => {
       toast.error("Sélectionnez d'abord une offre");
       return;
     }
-    addKeysMutation.mutate({ offerId: selectedOfferId, keysText: newKeys });
+    const maxUsesVal = parseInt(maxUses) || 1;
+    if (maxUsesVal < 1) {
+      toast.error("Le nombre d'utilisations doit être au moins 1");
+      return;
+    }
+    addKeysMutation.mutate({ offerId: selectedOfferId, keysText: newKeys, maxUsesVal });
   };
 
   const usedCount = keys?.filter(k => k.used).length || 0;
@@ -153,6 +163,19 @@ export const KeysManager = () => {
                     {newKeys.split("\n").filter(k => k.trim()).length} key(s) à ajouter
                   </p>
                 </div>
+                <div className="space-y-2">
+                  <Label>Nombre d'utilisations max par key</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={maxUses}
+                    onChange={(e) => setMaxUses(e.target.value)}
+                    placeholder="1"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Chaque key pourra être utilisée {parseInt(maxUses) || 1} fois
+                  </p>
+                </div>
                 <Button
                   onClick={handleAddKeys}
                   className="w-full bg-gradient-button"
@@ -176,7 +199,7 @@ export const KeysManager = () => {
             Disponibles: {availableCount}
           </Badge>
           <Badge variant="destructive" className="text-sm px-3 py-1">
-            Utilisées: {usedCount}
+            Épuisées: {usedCount}
           </Badge>
         </div>
       )}
@@ -206,8 +229,11 @@ export const KeysManager = () => {
                   <code className="text-sm truncate">{key.key_value}</code>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
+                  <Badge variant="outline" className="text-xs">
+                    {(key as any).use_count || 0}/{(key as any).max_uses || 1} utilisations
+                  </Badge>
                   {key.used ? (
-                    <Badge variant="destructive" className="text-xs">Utilisée</Badge>
+                    <Badge variant="destructive" className="text-xs">Épuisée</Badge>
                   ) : (
                     <Badge variant="secondary" className="text-xs bg-green-600/20 text-green-500">Disponible</Badge>
                   )}
