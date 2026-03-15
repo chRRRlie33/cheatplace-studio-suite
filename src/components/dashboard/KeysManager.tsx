@@ -9,7 +9,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Key, Plus, Trash2, Copy, Check } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Key, Plus, Trash2, Copy, Check, History, User, Clock } from "lucide-react";
 import { toast } from "sonner";
 
 export const KeysManager = () => {
@@ -19,6 +20,7 @@ export const KeysManager = () => {
   const [maxUses, setMaxUses] = useState("1");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
 
   const { data: offers } = useQuery({
     queryKey: ["all-offers-for-keys"],
@@ -43,6 +45,45 @@ export const KeysManager = () => {
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data;
+    },
+    enabled: !!selectedOfferId,
+  });
+
+  const { data: usageLogs } = useQuery({
+    queryKey: ["key-usage-logs", selectedOfferId],
+    queryFn: async () => {
+      if (!selectedOfferId) return [];
+      const { data, error } = await supabase
+        .from("key_usage_logs" as any)
+        .select("*")
+        .eq("offer_id", selectedOfferId)
+        .order("used_at", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      
+      // Fetch usernames for the user_ids
+      const userIds = [...new Set((data as any[]).map((l: any) => l.user_id))];
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id, username")
+        .in("id", userIds);
+      
+      const profileMap = new Map(profiles?.map(p => [p.id, p.username]) || []);
+      
+      // Fetch key values
+      const keyIds = [...new Set((data as any[]).map((l: any) => l.key_id))];
+      const { data: keysData } = await supabase
+        .from("offer_keys")
+        .select("id, key_value")
+        .in("id", keyIds);
+      
+      const keyMap = new Map(keysData?.map(k => [k.id, k.key_value]) || []);
+      
+      return (data as any[]).map((log: any) => ({
+        ...log,
+        username: profileMap.get(log.user_id) || "Inconnu",
+        key_value: keyMap.get(log.key_id) || "Supprimée",
+      }));
     },
     enabled: !!selectedOfferId,
   });
@@ -261,6 +302,58 @@ export const KeysManager = () => {
               </CardContent>
             </Card>
           ))}
+        </div>
+      )}
+
+      {selectedOfferId && (
+        <div className="space-y-3">
+          <Button
+            variant="outline"
+            onClick={() => setShowHistory(!showHistory)}
+            className="gap-2"
+          >
+            <History className="h-4 w-4" />
+            {showHistory ? "Masquer l'historique" : "Voir l'historique d'utilisation"}
+          </Button>
+
+          {showHistory && (
+            <Card>
+              <CardContent className="pt-4">
+                {!usageLogs || usageLogs.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-6">Aucune utilisation enregistrée</p>
+                ) : (
+                  <div className="max-h-[400px] overflow-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Utilisateur</TableHead>
+                          <TableHead>Key</TableHead>
+                          <TableHead>Date</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {usageLogs.map((log: any) => (
+                          <TableRow key={log.id}>
+                            <TableCell className="flex items-center gap-2">
+                              <User className="h-3 w-3 text-muted-foreground" />
+                              {log.username}
+                            </TableCell>
+                            <TableCell>
+                              <code className="text-xs">{log.key_value}</code>
+                            </TableCell>
+                            <TableCell className="flex items-center gap-2 text-muted-foreground">
+                              <Clock className="h-3 w-3" />
+                              {new Date(log.used_at).toLocaleString("fr-FR")}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </div>
       )}
     </div>

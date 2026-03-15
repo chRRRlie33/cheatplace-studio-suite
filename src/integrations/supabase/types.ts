@@ -125,6 +125,45 @@ export type Database = {
           },
         ]
       }
+      key_usage_logs: {
+        Row: {
+          id: string
+          key_id: string
+          offer_id: string
+          used_at: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          key_id: string
+          offer_id: string
+          used_at?: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          key_id?: string
+          offer_id?: string
+          used_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "key_usage_logs_key_id_fkey"
+            columns: ["key_id"]
+            isOneToOne: false
+            referencedRelation: "offer_keys"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "key_usage_logs_offer_id_fkey"
+            columns: ["offer_id"]
+            isOneToOne: false
+            referencedRelation: "offers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       logs: {
         Row: {
           action_type: string
