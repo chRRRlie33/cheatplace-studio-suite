@@ -206,21 +206,29 @@ export const UsersManager = () => {
   const handleSave = async () => {
     if (!editingUser) return;
 
-    await updateProfileMutation.mutateAsync({
-      userId: editingUser.id,
-      username: editUsername,
-      active: editingUser.active,
-    });
+    try {
+      // Only update profile if username changed
+      if (editUsername !== editingUser.username) {
+        await updateProfileMutation.mutateAsync({
+          userId: editingUser.id,
+          username: editUsername,
+          active: editingUser.active,
+        });
+      }
 
-    if (editRole !== editingUser.role) {
-      await updateRoleMutation.mutateAsync({
-        userId: editingUser.id,
-        role: editRole,
-      });
+      // Only update role if it changed
+      if (editRole !== editingUser.role) {
+        await updateRoleMutation.mutateAsync({
+          userId: editingUser.id,
+          role: editRole,
+        });
+      }
+
+      setDialogOpen(false);
+      setEditingUser(null);
+    } catch (error: any) {
+      // Error already handled by mutation onError
     }
-
-    setDialogOpen(false);
-    setEditingUser(null);
   };
 
   const handleToggleBan = (user: UserWithRole) => {
