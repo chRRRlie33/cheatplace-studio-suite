@@ -101,18 +101,28 @@ export const UsersManager = () => {
 
   const updateRoleMutation = useMutation({
     mutationFn: async ({ userId, role }: { userId: string; role: AppRole }) => {
-      await supabase.from("user_roles").delete().eq("user_id", userId);
+      // Delete all existing roles for this user first
+      const { error: deleteError } = await supabase
+        .from("user_roles")
+        .delete()
+        .eq("user_id", userId);
       
-      const { error } = await supabase
+      if (deleteError) throw deleteError;
+
+      // Insert the new role
+      const { error: insertError } = await supabase
         .from("user_roles")
         .insert({ user_id: userId, role });
       
-      if (error) throw error;
+      if (insertError) throw insertError;
 
-      await supabase
+      // Update the role in profiles table too
+      const { error: profileError } = await supabase
         .from("profiles")
         .update({ role })
         .eq("id", userId);
+      
+      if (profileError) throw profileError;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users-with-roles"] });
@@ -196,21 +206,29 @@ export const UsersManager = () => {
   const handleSave = async () => {
     if (!editingUser) return;
 
-    await updateProfileMutation.mutateAsync({
-      userId: editingUser.id,
-      username: editUsername,
-      active: editingUser.active,
-    });
+    try {
+      // Only update profile if username changed
+      if (editUsername !== editingUser.username) {
+        await updateProfileMutation.mutateAsync({
+          userId: editingUser.id,
+          username: editUsername,
+          active: editingUser.active,
+        });
+      }
 
-    if (editRole !== editingUser.role) {
-      await updateRoleMutation.mutateAsync({
-        userId: editingUser.id,
-        role: editRole,
-      });
+      // Only update role if it changed
+      if (editRole !== editingUser.role) {
+        await updateRoleMutation.mutateAsync({
+          userId: editingUser.id,
+          role: editRole,
+        });
+      }
+
+      setDialogOpen(false);
+      setEditingUser(null);
+    } catch (error: any) {
+      // Error already handled by mutation onError
     }
-
-    setDialogOpen(false);
-    setEditingUser(null);
   };
 
   const handleToggleBan = (user: UserWithRole) => {
