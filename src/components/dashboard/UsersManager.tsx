@@ -101,18 +101,28 @@ export const UsersManager = () => {
 
   const updateRoleMutation = useMutation({
     mutationFn: async ({ userId, role }: { userId: string; role: AppRole }) => {
-      await supabase.from("user_roles").delete().eq("user_id", userId);
+      // Delete all existing roles for this user first
+      const { error: deleteError } = await supabase
+        .from("user_roles")
+        .delete()
+        .eq("user_id", userId);
       
-      const { error } = await supabase
+      if (deleteError) throw deleteError;
+
+      // Insert the new role
+      const { error: insertError } = await supabase
         .from("user_roles")
         .insert({ user_id: userId, role });
       
-      if (error) throw error;
+      if (insertError) throw insertError;
 
-      await supabase
+      // Update the role in profiles table too
+      const { error: profileError } = await supabase
         .from("profiles")
         .update({ role })
         .eq("id", userId);
+      
+      if (profileError) throw profileError;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users-with-roles"] });
