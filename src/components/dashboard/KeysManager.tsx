@@ -304,6 +304,58 @@ export const KeysManager = () => {
           ))}
         </div>
       )}
+
+      {selectedOfferId && (
+        <div className="space-y-3">
+          <Button
+            variant="outline"
+            onClick={() => setShowHistory(!showHistory)}
+            className="gap-2"
+          >
+            <History className="h-4 w-4" />
+            {showHistory ? "Masquer l'historique" : "Voir l'historique d'utilisation"}
+          </Button>
+
+          {showHistory && (
+            <Card>
+              <CardContent className="pt-4">
+                {!usageLogs || usageLogs.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-6">Aucune utilisation enregistrée</p>
+                ) : (
+                  <div className="max-h-[400px] overflow-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Utilisateur</TableHead>
+                          <TableHead>Key</TableHead>
+                          <TableHead>Date</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {usageLogs.map((log: any) => (
+                          <TableRow key={log.id}>
+                            <TableCell className="flex items-center gap-2">
+                              <User className="h-3 w-3 text-muted-foreground" />
+                              {log.username}
+                            </TableCell>
+                            <TableCell>
+                              <code className="text-xs">{log.key_value}</code>
+                            </TableCell>
+                            <TableCell className="flex items-center gap-2 text-muted-foreground">
+                              <Clock className="h-3 w-3" />
+                              {new Date(log.used_at).toLocaleString("fr-FR")}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
     </div>
   );
 };
