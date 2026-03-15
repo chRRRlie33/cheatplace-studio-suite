@@ -49,6 +49,45 @@ export const KeysManager = () => {
     enabled: !!selectedOfferId,
   });
 
+  const { data: usageLogs } = useQuery({
+    queryKey: ["key-usage-logs", selectedOfferId],
+    queryFn: async () => {
+      if (!selectedOfferId) return [];
+      const { data, error } = await supabase
+        .from("key_usage_logs" as any)
+        .select("*")
+        .eq("offer_id", selectedOfferId)
+        .order("used_at", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      
+      // Fetch usernames for the user_ids
+      const userIds = [...new Set((data as any[]).map((l: any) => l.user_id))];
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id, username")
+        .in("id", userIds);
+      
+      const profileMap = new Map(profiles?.map(p => [p.id, p.username]) || []);
+      
+      // Fetch key values
+      const keyIds = [...new Set((data as any[]).map((l: any) => l.key_id))];
+      const { data: keysData } = await supabase
+        .from("offer_keys")
+        .select("id, key_value")
+        .in("id", keyIds);
+      
+      const keyMap = new Map(keysData?.map(k => [k.id, k.key_value]) || []);
+      
+      return (data as any[]).map((log: any) => ({
+        ...log,
+        username: profileMap.get(log.user_id) || "Inconnu",
+        key_value: keyMap.get(log.key_id) || "Supprimée",
+      }));
+    },
+    enabled: !!selectedOfferId,
+  });
+
   const addKeysMutation = useMutation({
     mutationFn: async ({ offerId, keysText, maxUsesVal }: { offerId: string; keysText: string; maxUsesVal: number }) => {
       const keysList = keysText
