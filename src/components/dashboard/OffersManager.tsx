@@ -548,7 +548,13 @@ export const OffersManager = () => {
         updateMutation.mutate({ 
           id: editingOffer.id, 
           ...offerData,
-          media_urls: editingOffer.media_urls || []
+          media_urls: editingOffer.media_urls || [],
+          file_url: editingOffer.file_url,
+          file_size: editingOffer.file_size,
+          file_format: editingOffer.file_format,
+          image_preview_url: editingOffer.image_preview_url,
+          media_url: editingOffer.media_url,
+          media_type: editingOffer.media_type
         });
       } else {
         createMutation.mutate(offerData);
