@@ -757,10 +757,10 @@ export const OffersManager = () => {
                 {/* Médias existants lors de l'édition */}
                 {editingOffer?.media_urls && editingOffer.media_urls.length > 0 && (
                   <div className="mt-2">
-                    <p className="text-sm text-muted-foreground mb-2">Médias actuels:</p>
+                    <p className="text-sm text-muted-foreground mb-2">Médias actuels ({editingOffer.media_urls.length}):</p>
                     <div className="grid grid-cols-3 gap-2">
                       {editingOffer.media_urls.map((media: any, index: number) => (
-                        <div key={index} className="relative">
+                        <div key={index} className="relative group">
                           {media.type === 'image' ? (
                             <img 
                               src={media.url} 
@@ -772,6 +772,27 @@ export const OffersManager = () => {
                               <Video className="h-8 w-8 text-muted-foreground" />
                             </div>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingOffer((prev: any) => ({
+                                ...prev,
+                                media_urls: prev.media_urls.filter((_: any, i: number) => i !== index),
+                                image_preview_url: index === 0 && prev.media_urls.length > 1 
+                                  ? prev.media_urls[1]?.type === 'image' ? prev.media_urls[1].url : prev.image_preview_url
+                                  : prev.image_preview_url,
+                              }));
+                            }}
+                            className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                          <Badge 
+                            variant="secondary" 
+                            className="absolute bottom-1 left-1 text-xs"
+                          >
+                            {media.type === 'image' ? <Image className="h-3 w-3" /> : <Video className="h-3 w-3" />}
+                          </Badge>
                         </div>
                       ))}
                     </div>
