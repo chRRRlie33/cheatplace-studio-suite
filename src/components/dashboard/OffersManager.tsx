@@ -655,7 +655,7 @@ export const OffersManager = () => {
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="file">Fichier téléchargeable (max 150 MB)</Label>
+                <Label htmlFor="file">Fichier téléchargeable (max 200 MB)</Label>
                 <div className="flex items-center gap-2">
                   <Input
                     id="file"
