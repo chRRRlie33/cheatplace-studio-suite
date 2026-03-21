@@ -131,21 +131,21 @@ export type Database = {
           key_id: string
           offer_id: string
           used_at: string
-          user_id: string
+          user_id: string | null
         }
         Insert: {
           id?: string
           key_id: string
           offer_id: string
           used_at?: string
-          user_id: string
+          user_id?: string | null
         }
         Update: {
           id?: string
           key_id?: string
           offer_id?: string
           used_at?: string
-          user_id?: string
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -486,7 +486,7 @@ export type Database = {
         Returns: undefined
       }
       redeem_offer_key: {
-        Args: { _key_value: string; _offer_id: string; _user_id: string }
+        Args: { _key_value: string; _offer_id: string; _user_id?: string }
         Returns: boolean
       }
     }

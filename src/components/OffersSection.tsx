@@ -68,15 +68,11 @@ export const OffersSection = () => {
     setValidatingKey(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        toast.error("Vous devez être connecté pour télécharger");
-        return;
-      }
 
       const { data: result, error } = await supabase.rpc("redeem_offer_key", {
         _offer_id: keyDialogOffer.id,
         _key_value: keyInput.trim(),
-        _user_id: user.id,
+        _user_id: user?.id ?? null,
       });
 
       if (error || !result) {
@@ -132,6 +128,20 @@ export const OffersSection = () => {
             offer_id: offer.id,
             offer_title: offer.title,
             username: profileData?.username,
+            date: now.toLocaleDateString('fr-FR'),
+            time: now.toLocaleTimeString('fr-FR')
+          }
+        });
+      } else {
+        // Guest download log
+        const now = new Date();
+        await supabase.from("logs").insert({
+          action_type: "download",
+          message: `Téléchargement de "${offer.title}" par un invité`,
+          metadata: {
+            offer_id: offer.id,
+            offer_title: offer.title,
+            username: "Invité",
             date: now.toLocaleDateString('fr-FR'),
             time: now.toLocaleTimeString('fr-FR')
           }
