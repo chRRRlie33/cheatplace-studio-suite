@@ -14,7 +14,7 @@ import { Plus, Edit, Trash2, Download, Upload, Image, Video, X, Loader2, GripVer
 import { toast } from "sonner";
 import { z } from "zod";
 
-const MAX_FILE_SIZE = 150 * 1024 * 1024; // 150 MB pour tous les fichiers
+const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200 MB pour tous les fichiers
 const MAX_IMAGE_DIMENSION = 1920; // Dimension max pour compression
 const COMPRESSION_QUALITY = 0.8; // Qualité de compression JPEG
 
@@ -77,7 +77,7 @@ export const OffersManager = () => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
       if (selectedFile.size > MAX_FILE_SIZE) {
-        toast.error(`Le fichier dépasse la limite de 150 MB`);
+        toast.error(`Le fichier dépasse la limite de 200 MB`);
         return;
       }
       setFile(selectedFile);
@@ -147,7 +147,7 @@ export const OffersManager = () => {
       
       // Limite de 150MB pour les médias
       if (file.size > MAX_FILE_SIZE) {
-        toast.error(`${file.name} dépasse la limite de 150 MB`);
+        toast.error(`${file.name} dépasse la limite de 200 MB`);
         continue;
       }
 
@@ -218,7 +218,7 @@ export const OffersManager = () => {
       let file = files[i];
       
       if (file.size > MAX_FILE_SIZE) {
-        toast.error(`${file.name} dépasse la limite de 150 MB`);
+        toast.error(`${file.name} dépasse la limite de 200 MB`);
         continue;
       }
 
@@ -548,7 +548,13 @@ export const OffersManager = () => {
         updateMutation.mutate({ 
           id: editingOffer.id, 
           ...offerData,
-          media_urls: editingOffer.media_urls || []
+          media_urls: editingOffer.media_urls || [],
+          file_url: editingOffer.file_url,
+          file_size: editingOffer.file_size,
+          file_format: editingOffer.file_format,
+          image_preview_url: editingOffer.image_preview_url,
+          media_url: editingOffer.media_url,
+          media_type: editingOffer.media_type
         });
       } else {
         createMutation.mutate(offerData);
@@ -649,7 +655,7 @@ export const OffersManager = () => {
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="file">Fichier téléchargeable (max 150 MB)</Label>
+                <Label htmlFor="file">Fichier téléchargeable (max 200 MB)</Label>
                 <div className="flex items-center gap-2">
                   <Input
                     id="file"
@@ -673,7 +679,7 @@ export const OffersManager = () => {
               </div>
 
               <div className="space-y-2">
-                <Label>Images et Vidéos (max 150 MB chacun, compression auto)</Label>
+                <Label>Images et Vidéos (max 200 MB chacun, compression auto)</Label>
                 <div 
                   ref={dropZoneRef}
                   onDragEnter={handleDragEnter}
@@ -751,10 +757,10 @@ export const OffersManager = () => {
                 {/* Médias existants lors de l'édition */}
                 {editingOffer?.media_urls && editingOffer.media_urls.length > 0 && (
                   <div className="mt-2">
-                    <p className="text-sm text-muted-foreground mb-2">Médias actuels:</p>
+                    <p className="text-sm text-muted-foreground mb-2">Médias actuels ({editingOffer.media_urls.length}):</p>
                     <div className="grid grid-cols-3 gap-2">
                       {editingOffer.media_urls.map((media: any, index: number) => (
-                        <div key={index} className="relative">
+                        <div key={index} className="relative group">
                           {media.type === 'image' ? (
                             <img 
                               src={media.url} 
@@ -766,6 +772,27 @@ export const OffersManager = () => {
                               <Video className="h-8 w-8 text-muted-foreground" />
                             </div>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingOffer((prev: any) => ({
+                                ...prev,
+                                media_urls: prev.media_urls.filter((_: any, i: number) => i !== index),
+                                image_preview_url: index === 0 && prev.media_urls.length > 1 
+                                  ? prev.media_urls[1]?.type === 'image' ? prev.media_urls[1].url : prev.image_preview_url
+                                  : prev.image_preview_url,
+                              }));
+                            }}
+                            className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                          <Badge 
+                            variant="secondary" 
+                            className="absolute bottom-1 left-1 text-xs"
+                          >
+                            {media.type === 'image' ? <Image className="h-3 w-3" /> : <Video className="h-3 w-3" />}
+                          </Badge>
                         </div>
                       ))}
                     </div>
