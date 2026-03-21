@@ -68,15 +68,11 @@ export const OffersSection = () => {
     setValidatingKey(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        toast.error("Vous devez être connecté pour télécharger");
-        return;
-      }
 
       const { data: result, error } = await supabase.rpc("redeem_offer_key", {
         _offer_id: keyDialogOffer.id,
         _key_value: keyInput.trim(),
-        _user_id: user.id,
+        _user_id: user?.id ?? null,
       });
 
       if (error || !result) {
