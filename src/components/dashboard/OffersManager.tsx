@@ -77,7 +77,7 @@ export const OffersManager = () => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
       if (selectedFile.size > MAX_FILE_SIZE) {
-        toast.error(`Le fichier dépasse la limite de 150 MB`);
+        toast.error(`Le fichier dépasse la limite de 200 MB`);
         return;
       }
       setFile(selectedFile);
