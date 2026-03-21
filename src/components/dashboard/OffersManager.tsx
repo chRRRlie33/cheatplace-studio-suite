@@ -14,7 +14,7 @@ import { Plus, Edit, Trash2, Download, Upload, Image, Video, X, Loader2, GripVer
 import { toast } from "sonner";
 import { z } from "zod";
 
-const MAX_FILE_SIZE = 150 * 1024 * 1024; // 150 MB pour tous les fichiers
+const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200 MB pour tous les fichiers
 const MAX_IMAGE_DIMENSION = 1920; // Dimension max pour compression
 const COMPRESSION_QUALITY = 0.8; // Qualité de compression JPEG
 
