@@ -132,6 +132,20 @@ export const OffersSection = () => {
             time: now.toLocaleTimeString('fr-FR')
           }
         });
+      } else {
+        // Guest download log
+        const now = new Date();
+        await supabase.from("logs").insert({
+          action_type: "download",
+          message: `Téléchargement de "${offer.title}" par un invité`,
+          metadata: {
+            offer_id: offer.id,
+            offer_title: offer.title,
+            username: "Invité",
+            date: now.toLocaleDateString('fr-FR'),
+            time: now.toLocaleTimeString('fr-FR')
+          }
+        });
       }
 
       const hasQuery = offer.file_url.includes("?");
