@@ -433,6 +433,13 @@ const Auth = () => {
           <p className="text-muted-foreground">
             Le marketplace ultime pour les cheaters et gamers
           </p>
+          <Button
+            variant="ghost"
+            className="mt-4 w-full text-muted-foreground hover:text-foreground"
+            onClick={() => navigate("/")}
+          >
+            Continuer en tant qu'invité →
+          </Button>
         </div>
 
         <Tabs defaultValue="login" className="w-full">
