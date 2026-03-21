@@ -679,7 +679,7 @@ export const OffersManager = () => {
               </div>
 
               <div className="space-y-2">
-                <Label>Images et Vidéos (max 150 MB chacun, compression auto)</Label>
+                <Label>Images et Vidéos (max 200 MB chacun, compression auto)</Label>
                 <div 
                   ref={dropZoneRef}
                   onDragEnter={handleDragEnter}
