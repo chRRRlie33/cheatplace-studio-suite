@@ -61,13 +61,8 @@ const Auth = () => {
   }, [user, navigate]);
 
   const checkBanned = async (email: string): Promise<boolean> => {
-    const { data: bannedData } = await supabase
-      .from("banned_emails")
-      .select("*")
-      .eq("email", email)
-      .maybeSingle();
-    
-    return !!bannedData;
+    const { data } = await supabase.rpc("is_email_banned", { _email: email });
+    return !!data;
   };
 
   const getClientIP = async (): Promise<string | null> => {
@@ -83,11 +78,7 @@ const Auth = () => {
 
   const checkBannedIP = async (ip: string): Promise<boolean> => {
     if (!ip) return false;
-    const { data } = await supabase
-      .from("banned_ips")
-      .select("*")
-      .eq("ip_address", ip)
-      .maybeSingle();
+    const { data } = await supabase.rpc("is_ip_banned", { _ip_address: ip });
     return !!data;
   };
 
