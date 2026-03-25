@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, useRef } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
@@ -18,77 +18,106 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const getClientIP = async (): Promise<string | null> => {
+  try {
+    const response = await fetch('https://api.ipify.org?format=json');
+    const data = await response.json();
+    return data.ip;
+  } catch (error) {
+    console.error("Error fetching IP:", error);
+    return null;
+  }
+};
+
+const checkBannedEmail = async (email: string): Promise<boolean> => {
+  const { data } = await supabase.rpc("is_email_banned", { _email: email });
+  return !!data;
+};
+
+const checkBannedIP = async (ip: string): Promise<boolean> => {
+  if (!ip) return false;
+  const { data } = await supabase.rpc("is_ip_banned", { _ip_address: ip });
+  return !!data;
+};
+
+const checkUserActive = async (userId: string): Promise<boolean> => {
+  const { data } = await supabase
+    .from("profiles")
+    .select("active")
+    .eq("id", userId)
+    .single();
+  return data?.active !== false;
+};
+
+const fetchUserRole = async (userId: string): Promise<AppRole> => {
+  try {
+    const { data, error } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", userId)
+      .order("role", { ascending: true })
+      .limit(1)
+      .single();
+    if (!error && data) return data.role as AppRole;
+    return "client";
+  } catch {
+    return "client";
+  }
+};
+
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [role, setRole] = useState<AppRole | null>(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
-
-  const fetchRole = async (userId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", userId)
-        .order("role", { ascending: true })
-        .limit(1)
-        .single();
-
-      if (!error && data) {
-        setRole(data.role as AppRole);
-      } else {
-        setRole("client");
-      }
-    } catch (error) {
-      console.error("Error fetching role:", error);
-      setRole("client");
-    }
-  };
-
-  const getClientIP = async (): Promise<string | null> => {
-    try {
-      const response = await fetch('https://api.ipify.org?format=json');
-      const data = await response.json();
-      return data.ip;
-    } catch (error) {
-      console.error("Error fetching IP:", error);
-      return null;
-    }
-  };
-
-  const checkBannedEmail = async (email: string): Promise<boolean> => {
-    const { data } = await supabase.rpc("is_email_banned", { _email: email });
-    return !!data;
-  };
-
-  const checkBannedIP = async (ip: string): Promise<boolean> => {
-    if (!ip) return false;
-    const { data } = await supabase.rpc("is_ip_banned", { _ip_address: ip });
-    return !!data;
-  };
-
-  const checkUserActive = async (userId: string): Promise<boolean> => {
-    const { data } = await supabase
-      .from("profiles")
-      .select("active")
-      .eq("id", userId)
-      .single();
-    return data?.active !== false;
-  };
+  const initialized = useRef(false);
 
   useEffect(() => {
-    // Set up auth state listener
+    if (initialized.current) return;
+    initialized.current = true;
+
+    // 1. First restore session from storage
+    supabase.auth.getSession().then(async ({ data: { session: currentSession } }) => {
+      if (currentSession?.user) {
+        // Quick: set user/session immediately so UI renders
+        setSession(currentSession);
+        setUser(currentSession.user);
+
+        // Then validate in background
+        const [isActive, userRole] = await Promise.all([
+          checkUserActive(currentSession.user.id),
+          fetchUserRole(currentSession.user.id),
+        ]);
+
+        if (!isActive) {
+          await supabase.auth.signOut();
+          setUser(null);
+          setSession(null);
+          setRole(null);
+        } else {
+          setRole(userRole);
+        }
+      }
+      setLoading(false);
+    });
+
+    // 2. Listen for future auth changes (login/logout)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        
-        if (session?.user) {
-          // Vérifier si l'utilisateur est actif
-          const isActive = await checkUserActive(session.user.id);
+      async (event, newSession) => {
+        // Skip the initial INITIAL_SESSION event — we handle it above
+        if (event === 'INITIAL_SESSION') return;
+
+        setSession(newSession);
+        setUser(newSession?.user ?? null);
+
+        if (newSession?.user) {
+          const [isActive, userRole] = await Promise.all([
+            checkUserActive(newSession.user.id),
+            fetchUserRole(newSession.user.id),
+          ]);
+
           if (!isActive) {
-            // Utilisateur banni - forcer la déconnexion
             await supabase.auth.signOut();
             setUser(null);
             setSession(null);
@@ -96,80 +125,31 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             navigate("/auth");
             return;
           }
-
-          // Vérifier l'email et l'IP
-          const clientIP = await getClientIP();
-          const isEmailBanned = await checkBannedEmail(session.user.email || '');
-          const isIPBanned = clientIP ? await checkBannedIP(clientIP) : false;
-
-          if (isEmailBanned || isIPBanned) {
-            await supabase.auth.signOut();
-            setUser(null);
-            setSession(null);
-            setRole(null);
-            navigate("/auth");
-            return;
-          }
-
-          setTimeout(() => {
-            fetchRole(session.user.id);
-          }, 0);
+          setRole(userRole);
         } else {
           setRole(null);
         }
-        
-        setLoading(false);
       }
     );
-
-    // Check for existing session
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user) {
-        // Vérifier si l'utilisateur est actif
-        const isActive = await checkUserActive(session.user.id);
-        if (!isActive) {
-          await supabase.auth.signOut();
-          setLoading(false);
-          return;
-        }
-
-        // Vérifier l'email et l'IP
-        const clientIP = await getClientIP();
-        const isEmailBanned = await checkBannedEmail(session.user.email || '');
-        const isIPBanned = clientIP ? await checkBannedIP(clientIP) : false;
-
-        if (isEmailBanned || isIPBanned) {
-          await supabase.auth.signOut();
-          setLoading(false);
-          return;
-        }
-
-        setSession(session);
-        setUser(session.user);
-        fetchRole(session.user.id);
-      }
-      
-      setLoading(false);
-    });
 
     return () => subscription.unsubscribe();
   }, [navigate]);
 
   const signIn = async (email: string, password: string) => {
     try {
-      // Vérifier si c'est un email temporaire
       if (isDisposableEmail(email)) {
         return { error: { message: "Les emails temporaires ne sont pas autorisés. Veuillez utiliser une adresse email permanente." } };
       }
 
-      // Vérifier si l'email est banni AVANT la connexion
-      const isEmailBanned = await checkBannedEmail(email);
+      const [isEmailBanned, clientIP] = await Promise.all([
+        checkBannedEmail(email),
+        getClientIP(),
+      ]);
+
       if (isEmailBanned) {
         return { error: { message: "Ce compte a été banni. Accès refusé." } };
       }
 
-      // Vérifier si l'IP est bannie AVANT la connexion
-      const clientIP = await getClientIP();
       if (clientIP) {
         const isIPBanned = await checkBannedIP(clientIP);
         if (isIPBanned) {
@@ -177,14 +157,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         }
       }
 
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
 
-      // Vérifier si l'utilisateur est actif
       if (data.user) {
         const isActive = await checkUserActive(data.user.id);
         if (!isActive) {
@@ -192,36 +167,33 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           return { error: { message: "Ce compte a été banni. Accès refusé." } };
         }
 
-        // Récupérer les infos du profil
+        // Fire-and-forget profile update + log
         const { data: profileData } = await supabase
           .from("profiles")
           .select("login_count, username")
           .eq("id", data.user.id)
           .single();
 
-        await supabase
-          .from("profiles")
-          .update({ 
-            last_login: new Date().toISOString(),
-            login_count: (profileData?.login_count || 0) + 1,
-            ip_last_login: clientIP
-          })
-          .eq("id", data.user.id);
-
-        // Log connexion avec détails complets
         const now = new Date();
-        await supabase.from("logs").insert({
-          user_id: data.user.id,
-          action_type: "login",
-          message: `Connexion de ${profileData?.username || 'Utilisateur'}`,
-          metadata: { 
-            email, 
-            username: profileData?.username,
-            ip: clientIP,
-            date: now.toLocaleDateString('fr-FR'),
-            time: now.toLocaleTimeString('fr-FR')
-          },
-        });
+        await Promise.all([
+          supabase.from("profiles").update({
+            last_login: now.toISOString(),
+            login_count: (profileData?.login_count || 0) + 1,
+            ip_last_login: clientIP,
+          }).eq("id", data.user.id),
+          supabase.from("logs").insert({
+            user_id: data.user.id,
+            action_type: "login",
+            message: `Connexion de ${profileData?.username || 'Utilisateur'}`,
+            metadata: {
+              email,
+              username: profileData?.username,
+              ip: clientIP,
+              date: now.toLocaleDateString('fr-FR'),
+              time: now.toLocaleTimeString('fr-FR'),
+            },
+          }),
+        ]);
       }
 
       return { error: null };
@@ -232,56 +204,46 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const signUp = async (username: string, email: string, password: string, role: AppRole = "client") => {
     try {
-      // Vérifier si c'est un email temporaire
       if (isDisposableEmail(email)) {
         return { error: { message: "Les emails temporaires ne sont pas autorisés. Veuillez utiliser une adresse email permanente." } };
       }
 
-      // Récupérer l'IP du client pour l'inscription
       const clientIP = await getClientIP();
-
       const redirectUrl = `${window.location.origin}/`;
-      
+
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
           emailRedirectTo: redirectUrl,
-          data: {
-            username,
-            role,
-          },
+          data: { username, role },
         },
       });
 
       if (error) throw error;
 
-      // Mettre à jour le profil avec l'IP d'inscription et de connexion
       if (data.user) {
-        await supabase
-          .from("profiles")
-          .update({ 
+        const now = new Date();
+        await Promise.all([
+          supabase.from("profiles").update({
             ip_signup: clientIP,
             ip_last_login: clientIP,
-            last_login: new Date().toISOString(),
-            login_count: 1
-          })
-          .eq("id", data.user.id);
-
-        // Log inscription avec détails complets incluant l'IP
-        const now = new Date();
-        await supabase.from("logs").insert({
-          user_id: data.user.id,
-          action_type: "signup",
-          message: `Inscription de ${username}`,
-          metadata: { 
-            email, 
-            username,
-            ip: clientIP,
-            date: now.toLocaleDateString('fr-FR'),
-            time: now.toLocaleTimeString('fr-FR')
-          },
-        });
+            last_login: now.toISOString(),
+            login_count: 1,
+          }).eq("id", data.user.id),
+          supabase.from("logs").insert({
+            user_id: data.user.id,
+            action_type: "signup",
+            message: `Inscription de ${username}`,
+            metadata: {
+              email,
+              username,
+              ip: clientIP,
+              date: now.toLocaleDateString('fr-FR'),
+              time: now.toLocaleTimeString('fr-FR'),
+            },
+          }),
+        ]);
       }
 
       return { error: null };
@@ -292,7 +254,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const signOut = async () => {
     try {
-      // Essayer d'enregistrer le log de déconnexion avec détails
       if (user) {
         const { data: profileData } = await supabase
           .from("profiles")
@@ -301,21 +262,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           .single();
 
         const now = new Date();
-        const { error } = await supabase.from("logs").insert({
+        await supabase.from("logs").insert({
           user_id: user.id,
           action_type: "logout",
           message: `Déconnexion de ${profileData?.username || 'Utilisateur'}`,
-          metadata: { 
+          metadata: {
             email: user.email,
             username: profileData?.username,
             date: now.toLocaleDateString('fr-FR'),
-            time: now.toLocaleTimeString('fr-FR')
+            time: now.toLocaleTimeString('fr-FR'),
           },
         });
-
-        if (error) {
-          console.error("Error inserting logout log:", error);
-        }
       }
     } catch (error) {
       console.error("Unexpected error during logout logging:", error);
