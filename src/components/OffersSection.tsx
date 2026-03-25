@@ -25,18 +25,15 @@ export const OffersSection = () => {
   const queryClient = useQueryClient();
 
   const checkOfferKeys = async (offerId: string): Promise<{ total: number; available: number }> => {
-    const { count: total } = await supabase
-      .from("offer_keys")
-      .select("id", { count: "exact", head: true })
-      .eq("offer_id", offerId);
+    const { data, error } = await supabase.rpc("check_offer_key_availability", {
+      _offer_id: offerId,
+    });
 
-    const { count: available } = await supabase
-      .from("offer_keys")
-      .select("id", { count: "exact", head: true })
-      .eq("offer_id", offerId)
-      .eq("used", false);
+    if (error || !data || data.length === 0) {
+      return { total: 0, available: 0 };
+    }
 
-    return { total: total || 0, available: available || 0 };
+    return { total: Number(data[0].total), available: Number(data[0].available) };
   };
 
   const handleDownloadClick = async (offer: any) => {
@@ -184,7 +181,8 @@ export const OffersSection = () => {
       const { data, error } = await supabase
         .from("offers")
         .select(`
-          *,
+          id, title, description, price, tags, download_count, created_at, updated_at,
+          vendor_id, file_url, file_format, file_size, image_preview_url, media_type, media_url, media_urls,
           profiles:vendor_id (username, role)
         `)
         .order("created_at", { ascending: false });
