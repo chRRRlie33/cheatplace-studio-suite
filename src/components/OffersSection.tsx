@@ -182,7 +182,7 @@ export const OffersSection = () => {
         .from("offers")
         .select(`
           id, title, description, price, tags, download_count, created_at, updated_at,
-          vendor_id, file_format, file_size, image_preview_url, media_type, media_url, media_urls,
+          vendor_id, file_url, file_format, file_size, image_preview_url, media_type, media_url, media_urls,
           profiles:vendor_id (username, role)
         `)
         .order("created_at", { ascending: false });
