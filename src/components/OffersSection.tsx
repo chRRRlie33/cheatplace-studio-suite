@@ -7,8 +7,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Download, Eye, Package, Play, Image as ImageIcon, ChevronLeft, ChevronRight, Key } from "lucide-react";
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { toast } from "sonner";
+
+// Component to handle images that may be broken/removed
+const SafeImage = ({ src, alt, className }: { src: string; alt: string; className?: string }) => {
+  const [error, setError] = useState(false);
+  if (error || !src) return null;
+  return <img src={src} alt={alt} className={className} onError={() => setError(true)} />;
+};
 
 interface MediaItem {
   url: string;
@@ -183,7 +190,7 @@ export const OffersSection = () => {
         .select(`
           id, title, description, price, tags, download_count, created_at, updated_at,
           vendor_id, file_url, file_format, file_size, image_preview_url, media_type, media_url, media_urls,
-          profiles:vendor_id (username, role)
+          profiles:vendor_id!offers_vendor_id_fkey(username, role)
         `)
         .order("created_at", { ascending: false });
 
@@ -282,7 +289,7 @@ export const OffersSection = () => {
               >
                 {offer.image_preview_url && (
                   <div className="h-48 overflow-hidden rounded-t-lg">
-                    <img
+                    <SafeImage
                       src={offer.image_preview_url}
                       alt={offer.title}
                       className="w-full h-full object-cover"
@@ -390,9 +397,9 @@ export const OffersSection = () => {
                       Votre navigateur ne supporte pas la lecture de vidéos.
                     </video>
                   ) : currentMedia?.type === 'image' ? (
-                    <img 
+                    <SafeImage 
                       src={currentMedia.url} 
-                      alt={selectedOffer?.title}
+                      alt={selectedOffer?.title || ''}
                       className="w-full max-h-[500px] object-contain"
                     />
                   ) : null}
@@ -438,7 +445,7 @@ export const OffersSection = () => {
                             <Play className="h-6 w-6 text-muted-foreground" />
                           </div>
                         ) : (
-                          <img 
+                          <SafeImage 
                             src={media.url} 
                             alt={`Thumbnail ${index}`}
                             className="w-full h-full object-cover"
