@@ -469,6 +469,13 @@ export type Database = {
       }
     }
     Functions: {
+      check_offer_key_availability: {
+        Args: { _offer_id: string }
+        Returns: {
+          available: number
+          total: number
+        }[]
+      }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]
@@ -485,6 +492,8 @@ export type Database = {
         Args: { _offer_id: string }
         Returns: undefined
       }
+      is_email_banned: { Args: { _email: string }; Returns: boolean }
+      is_ip_banned: { Args: { _ip_address: string }; Returns: boolean }
       redeem_offer_key: {
         Args: { _key_value: string; _offer_id: string; _user_id?: string }
         Returns: boolean
