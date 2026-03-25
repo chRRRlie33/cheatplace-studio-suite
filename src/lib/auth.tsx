@@ -58,21 +58,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const checkBannedEmail = async (email: string): Promise<boolean> => {
-    const { data } = await supabase
-      .from("banned_emails")
-      .select("*")
-      .eq("email", email)
-      .maybeSingle();
+    const { data } = await supabase.rpc("is_email_banned", { _email: email });
     return !!data;
   };
 
   const checkBannedIP = async (ip: string): Promise<boolean> => {
     if (!ip) return false;
-    const { data } = await supabase
-      .from("banned_ips")
-      .select("*")
-      .eq("ip_address", ip)
-      .maybeSingle();
+    const { data } = await supabase.rpc("is_ip_banned", { _ip_address: ip });
     return !!data;
   };
 

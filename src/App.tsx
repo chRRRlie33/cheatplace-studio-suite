@@ -29,13 +29,11 @@ const BanChecker = ({ children }: { children: React.ReactNode }) => {
         const ip = data.ip;
 
         if (ip) {
-          const { data: bannedData } = await supabase
-            .from("banned_ips")
-            .select("*")
-            .eq("ip_address", ip)
-            .maybeSingle();
+          const { data: isBannedResult } = await supabase.rpc("is_ip_banned", {
+            _ip_address: ip,
+          });
 
-          if (bannedData) {
+          if (isBannedResult) {
             setIsBanned(true);
           }
         }
