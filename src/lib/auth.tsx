@@ -167,33 +167,37 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           return { error: { message: "Ce compte a été banni. Accès refusé." } };
         }
 
-        // Fire-and-forget profile update + log
-        const { data: profileData } = await supabase
-          .from("profiles")
-          .select("login_count, username")
-          .eq("id", data.user.id)
-          .single();
+        // Fire-and-forget profile update + log (non-blocking)
+        try {
+          const { data: profileData } = await supabase
+            .from("profiles")
+            .select("login_count, username")
+            .eq("id", data.user.id)
+            .single();
 
-        const now = new Date();
-        await Promise.all([
-          supabase.from("profiles").update({
-            last_login: now.toISOString(),
-            login_count: (profileData?.login_count || 0) + 1,
-            ip_last_login: clientIP,
-          }).eq("id", data.user.id),
-          supabase.from("logs").insert({
-            user_id: data.user.id,
-            action_type: "login",
-            message: `Connexion de ${profileData?.username || 'Utilisateur'}`,
-            metadata: {
-              email,
-              username: profileData?.username,
-              ip: clientIP,
-              date: now.toLocaleDateString('fr-FR'),
-              time: now.toLocaleTimeString('fr-FR'),
-            },
-          }),
-        ]);
+          const now = new Date();
+          Promise.all([
+            supabase.from("profiles").update({
+              last_login: now.toISOString(),
+              login_count: (profileData?.login_count || 0) + 1,
+              ip_last_login: clientIP,
+            }).eq("id", data.user.id),
+            supabase.from("logs").insert({
+              user_id: data.user.id,
+              action_type: "login",
+              message: `Connexion de ${profileData?.username || 'Utilisateur'}`,
+              metadata: {
+                email,
+                username: profileData?.username,
+                ip: clientIP,
+                date: now.toLocaleDateString('fr-FR'),
+                time: now.toLocaleTimeString('fr-FR'),
+              },
+            }),
+          ]).catch(err => console.error("Non-critical login logging error:", err));
+        } catch (e) {
+          console.error("Non-critical profile update error:", e);
+        }
       }
 
       return { error: null };
