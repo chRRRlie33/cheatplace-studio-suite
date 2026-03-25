@@ -185,17 +185,29 @@ export const OffersSection = () => {
   const { data: offers, isLoading } = useQuery({
     queryKey: ["offers"],
     queryFn: async () => {
-      const { data, error } = await supabase
+      // Fetch offers
+      const { data: offersData, error } = await supabase
         .from("offers")
         .select(`
           id, title, description, price, tags, download_count, created_at, updated_at,
-          vendor_id, file_url, file_format, file_size, image_preview_url, media_type, media_url, media_urls,
-          profiles:vendor_id!offers_vendor_id_fkey(username, role)
+          vendor_id, file_url, file_format, file_size, image_preview_url, media_type, media_url, media_urls
         `)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      return data;
+
+      // Fetch vendor profiles from public view
+      const vendorIds = [...new Set(offersData?.map(o => o.vendor_id) || [])];
+      const { data: vendors } = await supabase
+        .from("public_profiles")
+        .select("id, username, role")
+        .in("id", vendorIds);
+
+      // Merge vendor info
+      return offersData?.map(offer => ({
+        ...offer,
+        profiles: vendors?.find(v => v.id === offer.vendor_id) || null,
+      })) || [];
     },
   });
 
